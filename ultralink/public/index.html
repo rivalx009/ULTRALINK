@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ULTRALINK</title><link rel="stylesheet" href="ul.css"><link rel="icon" href="icon.svg"><link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#05080a">
+</head><body class="scan">
+<div class="center">
+  <div style="text-align:center">
+    <div class="logo">ULTRALINK</div>
+    <div class="sub" style="margin-top:10px">TACTICAL CYCLING TELEMETRY &amp; COMMS NETWORK</div>
+  </div>
+  <div class="panel corner" style="width:min(460px,92vw);padding:22px">
+    <div class="sub" style="margin-bottom:14px">SELECT OPERATING MODE</div>
+    <a href="rider.html" style="text-decoration:none"><button class="primary" style="width:100%;padding:18px;font-size:15px">◮ RIDER MODE</button></a>
+    <div class="muted" style="font-size:10px;margin:8px 0 16px">Android phone · GPS or BLE head unit · PTT radio</div>
+    <a href="escort.html" style="text-decoration:none"><button style="width:100%;padding:18px;font-size:15px">▣ ESCORT MODE</button></a>
+    <div class="muted" style="font-size:10px;margin-top:8px">Windows 11 laptop · mission control · map &amp; comms</div>
+  </div>
+  <div class="sub" id="net">LINK: <span class="muted">checking…</span></div>
+</div>
+<script>
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+fetch('health').then(r=>r.text()).then(()=>net.innerHTML='LINK: <span style="color:var(--good)">RELAY ONLINE</span> · '+location.host)
+ .catch(()=>net.innerHTML='LINK: <span style="color:var(--bad)">RELAY OFFLINE</span>');
+</script></body></html>

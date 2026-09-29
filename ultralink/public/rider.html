@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>ULTRALINK · RIDER</title><link rel="stylesheet" href="ul.css"><link rel="icon" href="icon.svg"><link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#05080a">
+<style>
+  body{overflow:auto;overscroll-behavior:none}
+  #app{display:none;flex-direction:column;height:100dvh}
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:10px;letter-spacing:.18em;color:var(--dim)}
+  .hero{padding:16px 16px 10px;text-align:center}
+  .cells{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .cells>div{background:var(--bg2);padding:10px 8px;text-align:center}
+  .cells .k{font-size:8px;letter-spacing:.16em;color:var(--dim)}
+  .cells .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:3px}
+  #ptt{margin:auto 14px 14px;height:130px;border-radius:6px;border:2px solid var(--line2);background:radial-gradient(circle at 50% 35%,#0d2c36,#06151a);
+       font-size:17px;letter-spacing:.3em;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;touch-action:none;user-select:none}
+  #ptt.live{border-color:var(--bad);background:radial-gradient(circle at 50% 35%,#4a1220,#1a0509);color:#ffd7de;box-shadow:0 0 40px rgba(255,77,109,.45)}
+  #prof{width:100%;height:78px;display:block}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px}
+  .rx{position:fixed;top:44px;left:50%;transform:translateX(-50%);padding:6px 14px;border:1px solid var(--good);background:#04150a;
+      color:var(--good);font-size:11px;letter-spacing:.22em;border-radius:2px;display:none;z-index:50}
+</style></head><body class="scan">
+
+<div class="center" id="login">
+  <div style="text-align:center"><div class="logo" style="font-size:22px">ULTRALINK</div><div class="sub" style="margin-top:8px">RIDER MODE</div></div>
+  <div class="panel corner" style="width:min(420px,94vw);padding:20px">
+    <label>Mission code</label>
+    <input id="code" maxlength="8" placeholder="XXXXXX" style="width:100%;text-align:center;font-size:26px;letter-spacing:.4em;text-transform:uppercase">
+    <div style="height:14px"></div>
+    <label>Your callsign</label>
+    <input id="callsign" placeholder="e.g. FALCON-1" style="width:100%;text-transform:uppercase">
+    <div style="height:14px"></div>
+    <label>Telemetry source</label>
+    <div class="row">
+      <button id="srcGps" class="primary" style="flex:1">PHONE GPS</button>
+      <button id="srcBle" style="flex:1">GPS + BLE SENSOR</button>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:6px" id="bleNote">BLE adds heart rate / cadence / power from Garmin, Wahoo, watches &amp; straps.</div>
+    <div style="height:16px"></div>
+    <button id="go" class="primary" style="width:100%;padding:16px">◮ DEPLOY</button>
+    <div id="err" style="color:var(--bad);font-size:11px;margin-top:10px"></div>
+  </div>
+  <div class="sub"><a href="index.html" style="color:var(--dim)">← MODE SELECT</a></div>
+</div>
+
+<div id="app">
+  <div class="bar">
+    <span class="dot" id="lnk"></span><span id="mis">—</span><span class="sp"></span>
+    <span id="cs" style="color:var(--accent)">—</span><span class="tag" id="src">GPS</span>
+    <span class="tag" id="rClock">00:00</span><button id="rSet" class="ghost" style="padding:3px 7px;font-size:9px">⚙</button>
+  </div>
+  <div class="hero">
+    <div class="sub">GROUND SPEED</div>
+    <div class="big" id="spd">0.0<span style="font-size:15px;letter-spacing:.2em"> KM/H</span></div>
+  </div>
+  <div class="cells">
+    <div><div class="k">DIST COVERED</div><div class="v" id="cov">0.00</div></div>
+    <div><div class="k">REMAINING</div><div class="v" id="rem">--</div></div>
+    <div><div class="k">ETA</div><div class="v" id="eta">--:--</div></div>
+    <div><div class="k">GRADIENT %</div><div class="v" id="grd">--</div></div>
+    <div><div class="k">ELEV M</div><div class="v" id="ele">--</div></div>
+    <div><div class="k">HEART BPM</div><div class="v" id="hr">--</div></div>
+  </div>
+  <canvas id="prof"></canvas>
+  <div class="chips">
+    <span class="tag" id="acc">GPS ±--</span><span class="tag" id="rtt">RTT --</span>
+    <span class="tag" id="off">ON ROUTE</span><span class="tag" id="dev">NO SENSOR</span>
+    <span class="tag" id="avg">AVG --</span><span class="tag" id="vmode">VOICE --</span>
+    <span class="tag" id="secChip">SECTOR --</span><span class="tag" id="rStart" style="display:none">T-</span><span class="tag" id="rTarget">TGT --</span>
+  </div>
+  <div class="rx" id="rx"></div>
+  <dialog id="dlgR" style="background:var(--bg2);color:var(--fg);border:1px solid var(--line2);width:92vw;max-width:420px"></dialog>
+  <dialog id="dlgEnd" style="background:var(--bg2);color:var(--fg);border:1px solid var(--bad);width:92vw;max-width:420px"></dialog>
+  <div style="flex:1"></div>
+  <button id="ptt">PUSH TO TALK<span class="muted" style="font-size:9px;letter-spacing:.2em">HOLD · OR PRESS VOLUME/BT BUTTON</span></button>
+</div>
+
+<script src="ul.js"></script><script src="ul-settings.js"></script><script src="ul-fx.js"></script><script src="ul-ui.js"></script><script src="ul-sectors.js"></script><script src="rider.js"></script></body></html>

@@ -1,0 +1,9 @@
+{
+  "name": "ultralink",
+  "version": "0.9.0-proto",
+  "description": "Tactical cycling telemetry, tracking and PTT comms network (rider + escort modes)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node test-protocol.js" },
+  "license": "UNLICENSED",
+  "private": true
+}
