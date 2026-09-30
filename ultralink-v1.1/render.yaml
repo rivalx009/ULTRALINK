@@ -1,6 +1,0 @@
-services:
-  - type: web
-    name: ultralink
-    runtime: docker
-    plan: free
-    healthCheckPath: /health
