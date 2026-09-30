@@ -1,0 +1,15 @@
+{
+  "name": "ultralink",
+  "version": "1.1.0",
+  "description": "Tactical cycling telemetry, tracking and PTT comms network (rider + escort modes) for Windows, macOS, Android and iOS browsers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-e2e.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

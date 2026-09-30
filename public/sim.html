@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ULTRALINK · SIM</title><link rel="stylesheet" href="ul.css"><style>body{overflow:auto}</style></head><body class="scan">
+<div class="center">
+  <div class="logo" style="font-size:20px">ULTRALINK SIM</div>
+  <div class="sub">VIRTUAL RIDER INJECTOR · TESTING ONLY</div>
+  <div class="panel corner" style="width:min(460px,94vw);padding:20px">
+    <label>Mission code</label><input id="code" style="width:100%;text-transform:uppercase;text-align:center;letter-spacing:.3em">
+    <div style="height:12px"></div>
+    <label>Callsign</label><input id="cs" value="GHOST-1" style="width:100%;text-transform:uppercase">
+    <div style="height:12px"></div>
+    <label>Speed km/h <span id="sv" class="muted">32</span></label>
+    <input type="range" id="spd" min="8" max="60" value="32" style="width:100%">
+    <div style="height:12px"></div>
+    <label>Start at % of route <span id="ov" class="muted">0</span></label>
+    <input type="range" id="off" min="0" max="95" value="0" style="width:100%">
+    <label class="row" style="margin-top:12px;gap:8px;cursor:pointer"><input type="checkbox" id="dev" style="width:auto"> DEVIATE FROM ROUTE (~165 m off course)</label>
+    <button id="go" class="primary" style="width:100%;padding:14px;margin-top:16px">INJECT VIRTUAL RIDER</button>
+    <div id="out" class="muted" style="font-size:11px;margin-top:12px;line-height:1.7"></div>
+  </div>
+</div>
+<script src="ul.js"></script><script>
+const $=i=>document.getElementById(i);
+$('spd').oninput=e=>sv.textContent=e.target.value;
+$('off').oninput=e=>ov.textContent=e.target.value;
+$('code').value=localStorage.ulCode||'';
+$('go').onclick=()=>{
+  const link=new UL.Link(); link.connect();
+  link.on('error',m=>out.innerHTML='<span style="color:var(--bad)">'+m.msg+'</span>');
+  link.on('joined',m=>{
+    const r=UL.buildRoute(m.mission.route.map(p=>({lat:p[0],lon:p[1],ele:p[2]||0})));
+    let d=r.distance*(+$('off').value/100), hr=118, t0=Date.now();
+    out.innerHTML='LINKED · '+m.mission.name+' · route '+(r.distance/1000).toFixed(1)+'km';
+    setInterval(()=>{
+      const v=(+$('spd').value)/3.6*(0.92+Math.random()*0.16);
+      d=Math.min(r.distance,d+v);
+      let i=r.points.findIndex(p=>p.d>=d); if(i<1)i=1;
+      const p=r.points[i],q=r.points[i-1];
+      hr=Math.max(95,Math.min(185,hr+(p.grade*0.6)+(Math.random()-0.5)*3));
+      const dv=$('dev').checked, br=UL.bearing(q,p)+90, k=165/111320;
+      const lat=dv?p.lat+k*Math.cos(br*Math.PI/180):p.lat, lon=dv?p.lon+k*Math.sin(br*Math.PI/180)/Math.cos(p.lat*Math.PI/180):p.lon;
+      link.send({t:'telemetry',data:{lat,lon,speed:v,avg:v*0.95,max:v*1.2,
+        heading:UL.bearing(q,p),acc:4,covered:d,remaining:r.distance-d,ele:p.ele,grade:p.grade,
+        eta:Date.now()+(r.distance-d)/v*1000,etaSec:(r.distance-d)/v,hr:Math.round(hr),
+        source:'SIM',moving:(Date.now()-t0)/1000,ts:Date.now(),offRoute:dv?165:2}});
+      out.innerHTML='TX · '+(d/1000).toFixed(2)+' km · '+(v*3.6).toFixed(1)+' km/h · '+Math.round(hr)+' bpm';
+    },1000);
+  });
+  link.send({t:'join',code:$('code').value.toUpperCase(),role:'rider',callsign:$('cs').value.toUpperCase()});
+  $('go').disabled=true; $('go').textContent='RUNNING…';
+};
+</script></body></html>
