@@ -1,0 +1,378 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#03090c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ULTRALINK">
+<title>ULTRALINK · ESCORT</title>
+<link rel="stylesheet" href="leaflet.css">
+<link rel="stylesheet" href="ul.css"><link rel="icon" href="icon.svg"><link rel="apple-touch-icon" href="icon-180.png"><link rel="manifest" href="manifest.webmanifest">
+<style>
+  /* ---------- shared ---------- */
+  .stepnum{display:inline-block;width:18px;height:18px;line-height:17px;text-align:center;border:1px solid var(--accent);color:var(--accent);font-size:10px;margin-right:8px}
+  .leaflet-container{background:#04080a}
+  .leaflet-control-attribution{background:rgba(0,0,0,.5)!important;color:#456!important;font-size:8px!important}
+  .leaflet-control-attribution a{color:#678!important}
+  body.nocorners .corner:before,body.nocorners .corner:after{display:none}
+  .mk{position:relative}
+  .mk .lbl{position:absolute;left:16px;top:-3px;white-space:nowrap;font:600 10px/1.2 var(--mono);letter-spacing:.1em;text-shadow:0 0 5px #000,0 0 3px #000;padding:1px 3px;background:rgba(3,10,13,.55);border-left:2px solid currentColor;font-size:calc(10px * var(--label-scale,1))}
+  .mk.tx .lbl{animation:bl .6s steps(2) infinite}
+  .mk svg{transform-origin:50% 50%;scale:var(--marker-scale,1)}
+  .nolabels .mk .lbl{display:none}
+  .lyr button{padding:5px 8px;font-size:9px;margin:1px}
+  .lyr button.on{border-color:var(--accent);color:var(--accent)}
+  .hudbox{background:rgba(6,14,18,.88);border:1px solid var(--line);padding:8px 10px;font-size:10px;letter-spacing:.14em;color:var(--dim)}
+  .cpflag{font:600 9px var(--mono);letter-spacing:.1em;padding:1px 4px;background:rgba(3,10,13,.85);border:1px solid currentColor;white-space:nowrap}
+
+  /* ---------- home (mission planning) ---------- */
+  #home{display:none;position:fixed;inset:0;background:#04080a}
+  #homeMap{position:absolute;inset:0}
+  #hTop{position:absolute;left:0;right:0;top:0;z-index:700;display:flex;align-items:center;gap:12px;padding:9px 16px;background:linear-gradient(180deg,rgba(2,8,11,.92),rgba(2,8,11,0));font-size:10px;letter-spacing:.2em;color:var(--dim)}
+  .hpanel{position:absolute;z-index:700;background:rgba(6,14,18,.93);border:1px solid var(--line2);backdrop-filter:blur(6px);display:flex;flex-direction:column;min-height:0}
+  #profPanel{left:16px;top:52px;bottom:16px;width:330px}
+  #detPanel{right:16px;top:52px;bottom:16px;width:min(470px,46vw);transform:translateX(calc(100% + 30px));transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+  #detPanel.open{transform:none}
+  .hpanel .hh{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.26em;color:var(--accent)}
+  .hpanel .hb{flex:1;overflow:auto;padding:12px 14px;min-height:0}
+  .hpanel .hf{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  .pitem{border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,26,32,.85),rgba(6,14,18,.85));padding:10px 12px;margin-bottom:8px;cursor:pointer;position:relative;transition:.15s}
+  .pitem:hover{border-color:var(--line2);transform:translateX(2px)}
+  .pitem.sel{border-color:var(--accent);box-shadow:0 0 14px rgba(0,229,255,.2) inset}
+  .pitem .pn{font-size:12px;letter-spacing:.14em;font-weight:600}
+  .pitem .pm{font-size:9px;letter-spacing:.14em;color:var(--dim);margin-top:4px;line-height:1.7}
+  .pitem .cd{position:absolute;right:10px;top:10px;font-size:9px;letter-spacing:.12em;padding:2px 6px;border:1px solid var(--line2);color:var(--accent);font-variant-numeric:tabular-nums}
+  .pitem .cd.past{color:var(--dim)} .pitem .cd.soon{color:var(--warn);border-color:var(--warn)}
+  .pitem .x{position:absolute;right:8px;bottom:8px;padding:2px 7px;font-size:10px;opacity:.5}
+  .pitem .x:hover{opacity:1;border-color:var(--bad)}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .fld label{margin-bottom:4px}
+  .fld input,.fld select{width:100%}
+  .sech{font-size:10px;letter-spacing:.3em;color:var(--dim);margin:18px 0 8px;display:flex;align-items:center}
+  .sech:first-child{margin-top:0}
+  .secrow,.sechead{display:grid;grid-template-columns:26px 1fr .9fr 64px 26px 26px;gap:5px;align-items:center;margin-bottom:6px}
+  .sechead{font-size:8px;letter-spacing:.2em;color:var(--dim);margin-bottom:4px}
+  .secrow{padding:2px;border:1px solid transparent}
+  .secrow.on{border-color:var(--accent);background:rgba(0,229,255,.06)}
+  .autobox{margin-top:10px;border:1px solid var(--line);background:#07141a;padding:9px 10px;font-size:10px;letter-spacing:.1em}
+  .ulpop .leaflet-popup-content-wrapper{background:rgba(6,14,18,.96);color:var(--fg);border:1px solid var(--line2);border-radius:0;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+  .ulpop .leaflet-popup-tip{background:rgba(6,14,18,.96);border:1px solid var(--line2)}
+  .ulpop .leaflet-popup-content{margin:10px 12px;font-family:var(--mono)}
+  .cppop{width:210px}.cppop input{padding:6px 8px;font-size:12px;margin-top:3px}
+  #homeMap.tool-add,#homeMap.tool-add .leaflet-interactive{cursor:crosshair}
+  #earthGlow{position:absolute;inset:0;z-index:450;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 38%,rgba(0,90,120,.18) 62%,rgba(2,6,8,.85) 100%);transition:opacity .4s}
+  #hTools{position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:720;display:none;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 32px)}
+  #hTools button{padding:5px 10px;font-size:9px}
+  #hTools button.on{border-color:var(--accent);color:var(--accent);box-shadow:0 0 10px rgba(0,229,255,.25) inset}
+  #hTools .hint{font-size:9px;letter-spacing:.06em}
+  #pSecCard{top:96px;right:calc(min(470px,46vw) + 32px)}
+  .mpin{position:relative}
+  .mpin i{position:absolute;left:0;top:0;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);border:2px solid #fff;box-sizing:border-box}
+  .mpin i:after{content:'';position:absolute;inset:-9px;border-radius:50%;border:2px solid var(--accent);animation:mping 2s ease-out infinite}
+  @keyframes mping{0%{transform:scale(.3);opacity:1}100%{transform:scale(1.4);opacity:0}}
+  .mpin span{position:absolute;left:20px;top:-1px;white-space:nowrap;font:600 10px var(--mono);letter-spacing:.14em;color:#eafcff;background:rgba(3,10,13,.8);padding:1px 6px;border-left:2px solid var(--accent)}
+  #dPeek{display:none}
+  .secrow input[type=color]{width:28px;height:30px;padding:1px;background:none;border:1px solid var(--line2)}
+  .secrow input{padding:6px 8px;font-size:11px}
+  #setupProf{width:100%;height:96px;display:block;border:1px solid var(--line);background:#050d11;cursor:crosshair}
+
+  /* ---------- ops ---------- */
+  #shell{display:none;height:100dvh;flex-direction:column}
+  #top{display:flex;align-items:center;gap:12px;padding:7px 14px;border-bottom:1px solid var(--line);font-size:10px;letter-spacing:.2em;color:var(--dim);background:#060f13}
+  #clockbar{display:flex;align-items:center;gap:8px;padding:5px 14px;border-bottom:1px solid var(--line);background:#050c10;font-size:10px;letter-spacing:.16em;color:var(--dim);flex-wrap:wrap}
+  #clockbar .big2{font-size:17px;font-variant-numeric:tabular-nums;letter-spacing:.06em;color:var(--fg)}
+  #clockbar button,#top button{padding:4px 8px;font-size:9px}
+  #main{flex:1;display:flex;min-height:0}
+  #left{width:318px;min-width:220px;max-width:560px;display:flex;flex-direction:column;border-right:1px solid var(--line);background:#060e12}
+  #units{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+  #drag{width:5px;cursor:col-resize;background:var(--line)}
+  #right{flex:1;display:flex;flex-direction:column;min-width:0}
+  #map{flex:1;background:#04080a;position:relative}
+  #vdrag{height:5px;cursor:row-resize;background:var(--line)}
+  #bottom{height:220px;min-height:130px;display:flex;border-top:1px solid var(--line);background:#060e12}
+  #gbox{flex:1;min-width:0;position:relative}
+  #graph{position:absolute;inset:0;width:100%;height:100%}
+  #gctl{position:absolute;right:8px;top:6px;display:flex;gap:4px;z-index:2;align-items:center}
+  #gctl button{padding:2px 8px;font-size:10px}
+  #gtip{position:absolute;pointer-events:none;background:rgba(3,10,13,.9);border:1px solid var(--line2);padding:3px 7px;font-size:9px;letter-spacing:.1em;display:none;z-index:3;white-space:nowrap}
+  #sel{width:300px;border-left:1px solid var(--line);padding:10px 12px;overflow:auto}
+  .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);margin-top:8px}
+  .kv>div{background:#08181e;padding:5px 8px}
+  .kv .k{font-size:8px;letter-spacing:.14em;color:var(--dim)}
+  .kv .v{font-size:15px;font-variant-numeric:tabular-nums}
+  #hud{position:absolute;left:12px;top:12px;z-index:500;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  #comms{position:absolute;left:12px;bottom:12px;z-index:500;width:270px}
+  #log{max-height:110px;overflow:auto;font-size:10px;line-height:1.55}
+  #txbanner{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:600;padding:5px 16px;border:1px solid var(--bad);background:#1a0509;color:#ffd7de;font-size:11px;letter-spacing:.24em;display:none}
+  #cdBanner{position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:600;padding:8px 24px;border:1px solid var(--warn);background:rgba(20,12,0,.92);color:var(--warn);font-size:15px;letter-spacing:.3em;display:none;font-variant-numeric:tabular-nums;text-align:center}
+  #cdBanner small{display:block;font-size:9px;letter-spacing:.3em;color:var(--dim);margin-bottom:2px}
+
+  /* unit cards with gauge */
+  .ucard{border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,26,32,.9),rgba(6,14,18,.9));padding:8px 10px 9px;cursor:pointer;position:relative;transition:border-color .2s,box-shadow .2s,transform .2s}
+  .ucard:hover{border-color:var(--line2);transform:translateX(2px)}
+  .ucard.sel{border-color:var(--accent);box-shadow:0 0 16px rgba(0,229,255,.2) inset}
+  .ucard.stale{opacity:.45}
+  .ucard .uh{display:flex;align-items:center;gap:7px}
+  .ucard .cs{font-size:12px;letter-spacing:.16em;font-weight:600}
+  .ucard .ubody{display:flex;gap:8px;align-items:center;margin-top:2px}
+  .gwrap{position:relative;width:118px;flex:0 0 118px;cursor:pointer}
+  .gwrap svg{width:118px;height:92px;display:block;overflow:visible}
+  .gauge .tr{fill:none;stroke:#0f2a33;stroke-width:7;stroke-linecap:round}
+  .gauge .vl{fill:none;stroke:var(--accent);stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1),stroke .3s;filter:drop-shadow(0 0 4px currentColor)}
+  .gauge .tk{stroke:var(--line2);stroke-width:1}
+  .gauge .nd{transition:transform .6s cubic-bezier(.2,.8,.2,1);transform-origin:60px 56px}
+  .gval{position:absolute;left:0;right:0;top:32px;text-align:center;pointer-events:none}
+  .gval b{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .gval small{display:block;font-size:8px;letter-spacing:.2em;color:var(--dim);margin-top:3px}
+  .gmode{position:absolute;left:0;right:0;bottom:-2px;text-align:center;font-size:7px;letter-spacing:.24em;color:var(--dim);pointer-events:none}
+  .gwrap:hover .gmode{color:var(--accent)}
+  .ustats{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:3px;min-width:0}
+  .ustats div{background:#08181e;padding:3px 5px}
+  .ustats .k{font-size:7px;letter-spacing:.14em;color:var(--dim)}
+  .ustats .v{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .hrp{display:inline-block;color:var(--bad);animation:hb 1s ease-in-out infinite}
+  @keyframes hb{0%,100%{transform:scale(1)}15%{transform:scale(1.35)}30%{transform:scale(1)}}
+  .prog{position:relative;height:5px;margin-top:8px;background:#0d2027;display:flex;overflow:visible}
+  .prog i{display:block;height:5px;opacity:.55}
+  .prog em{position:absolute;top:-3px;width:3px;height:11px;background:#fff;box-shadow:0 0 6px #fff;transition:left .6s}
+  .usec{margin-top:6px;font-size:9px;letter-spacing:.12em;color:var(--dim);display:flex;gap:8px;align-items:center;min-height:14px}
+  .usec b{font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* rider pop-up (wind + draft) */
+  #riderPop{position:absolute;right:12px;top:12px;bottom:12px;width:300px;z-index:550;background:rgba(6,14,18,.94);border:1px solid var(--line2);display:none;flex-direction:column;backdrop-filter:blur(5px);transform:translateX(30px);opacity:0;transition:.3s}
+  #riderPop.show{display:flex}#riderPop.in{transform:none;opacity:1}
+  #riderPop .ph{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line)}
+  #riderPop .pb{flex:1;overflow:auto;padding:10px 12px}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+  .pgrid>div{background:#08181e;padding:5px 7px}
+  .pgrid .k{font-size:7px;letter-spacing:.14em;color:var(--dim)}.pgrid .v{font-size:14px;font-variant-numeric:tabular-nums}
+  .psec{font-size:9px;letter-spacing:.28em;color:var(--accent);margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+  .psec:after{content:'';flex:1;height:1px;background:var(--line)}
+  .advice{border-left:3px solid var(--accent);background:#08181e;padding:8px 10px;font-size:11px;line-height:1.6}
+  .advice.HIGH{border-left-color:var(--good)}.advice.MEDIUM{border-left-color:var(--warn)}.advice.LOW{border-left-color:var(--dim)}
+  .advice b{letter-spacing:.14em}
+  .notes{font-size:10px;line-height:1.65;color:var(--dim);margin:8px 0 0;padding-left:16px}
+  .seclr{display:grid;grid-template-columns:10px 1fr auto auto;gap:6px;font-size:10px;padding:3px 0;align-items:center;font-variant-numeric:tabular-nums}
+  .seclr i{width:10px;height:10px;display:block}
+
+  #setTabs button{font-size:9px;padding:5px 9px}
+  #setBody{margin-top:14px;max-height:56vh;overflow:auto}
+  .srow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .srow label{margin:0;flex:1;font-size:10px}
+  .srow input[type=range]{width:150px}
+  .srow input[type=color]{width:44px;height:26px;padding:1px;background:none;border:1px solid var(--line2)}
+  .keycap{min-width:64px;text-align:center;border:1px solid var(--line2);background:#07161b;padding:5px 8px;font-size:10px;cursor:pointer}
+  .keycap.wait{border-color:var(--warn);color:var(--warn)}
+  .swatch{width:16px;height:16px;border:1px solid #000;display:inline-block}
+  #boot{background:#020608}
+
+  /* ---------- ops additions: off-route alert, return, PTT, sector card ---------- */
+  #opsSecCard{top:12px;right:12px}
+  #map.popopen #opsSecCard{right:324px}
+  #offAlert{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:640;min-width:320px;max-width:min(560px,calc(100% - 24px));display:none;border:2px solid var(--bad);background:rgba(40,4,10,.95);box-shadow:0 0 30px rgba(255,40,70,.45);animation:offp 1.2s ease-in-out infinite}
+  #offAlert.show{display:block}
+  #offAlert.ack{animation:none;box-shadow:0 0 10px rgba(255,40,70,.25);border-color:#a3263a}
+  @keyframes offp{0%,100%{box-shadow:0 0 14px rgba(255,40,70,.35)}50%{box-shadow:0 0 38px rgba(255,40,70,.8)}}
+  #offAlert .oh{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--bad);color:#fff;font-size:12px;letter-spacing:.3em;font-weight:700}
+  #offAlert .ob{padding:6px 12px;font-size:11px;letter-spacing:.12em;color:#ffd7de}
+  #offAlert .orow{display:flex;gap:10px;align-items:center;padding:4px 0;cursor:pointer}
+  #offAlert .orow b{font-size:13px;letter-spacing:.14em}
+  #offAlert .orow .sp{flex:1}
+  #btnMaster{background:#fff;color:#b0102a;border:0;font-weight:700;letter-spacing:.2em;padding:5px 12px;font-size:10px}
+  #offAlert.ack #btnMaster{display:none}
+  #txbanner{top:auto;bottom:12px}
+  #btnReturn{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:560;display:none;padding:8px 16px;font-size:10px;letter-spacing:.2em;background:rgba(6,14,18,.94);border:1px solid var(--accent);color:var(--accent);box-shadow:0 0 16px rgba(0,229,255,.25)}
+  #btnReturn.show{display:block}
+  #map.tx #btnReturn{bottom:52px}
+  #pttDock{position:absolute;right:12px;bottom:12px;z-index:560;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  #map.popopen #pttDock{right:324px}
+  #pttBtn{width:74px;height:74px;border-radius:50%;border:2px solid var(--accent);background:radial-gradient(circle,#0b2b35,#061217);color:var(--accent);font:700 12px var(--mono);letter-spacing:.2em;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;box-shadow:0 0 16px rgba(0,229,255,.25)}
+  #pttBtn.on{border-color:var(--bad);color:#fff;background:radial-gradient(circle,#b0102a,#3a0510);box-shadow:0 0 26px rgba(255,40,70,.7)}
+  #pttTgt{padding:3px 8px;font-size:8px}
+  .ucard .lead{font-size:13px;cursor:pointer;opacity:.35;padding:0 3px;border:0;background:none;color:var(--warn)}
+  .ucard .lead.on{opacity:1;text-shadow:0 0 8px var(--warn)}
+  .ucard.leadcard{border-color:var(--warn)}
+  .ucard.off{border-color:var(--bad)!important;box-shadow:0 0 16px rgba(255,40,70,.3) inset}
+  .ucard .ltag{font-size:8px;letter-spacing:.12em;color:var(--warn)}
+  .mk .offr .lbl{background:#b0102a;color:#fff;border-left-color:#fff;animation:bl .8s steps(2) infinite}
+  .mk .offr svg{filter:drop-shadow(0 0 6px #ff2d4a)}
+  #audioPrompt{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:3000;display:none;padding:12px 20px;background:var(--warn);color:#000;font-weight:700;letter-spacing:.18em;font-size:11px;border:0;box-shadow:0 0 24px rgba(255,190,0,.5)}
+  #audioPrompt.show{display:block}
+
+  /* ---------- tablets / phones ---------- */
+  @media (max-width:900px){
+    #sel{display:none}
+    #left{width:250px;min-width:0}
+    #comms{width:220px}
+  }
+  @media (max-width:760px){
+    #top{flex-wrap:wrap;gap:6px;padding:6px 8px}
+    #btnKeys,#btnLayout{display:none}
+    #clockbar{padding:4px 8px;gap:5px}
+    #clockbar .big2{font-size:15px}
+    #main{flex-direction:column}
+    #left{width:auto!important;max-width:none;border-right:0;border-bottom:1px solid var(--line);flex:0 0 auto}
+    #left .hdr{display:none}
+    #units{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:6px}
+    #units .ucard{flex:0 0 250px}
+    #drag,#vdrag{display:none}
+    #bottom{height:130px!important;min-height:0}
+    #comms{display:none}
+    #hud{top:auto;bottom:12px;left:8px}
+    #riderPop{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:60%}
+    #map.popopen #opsSecCard,#map.popopen #pttDock{right:12px}
+    #map.popopen #pttDock{display:none}
+    #offAlert{min-width:0;width:calc(100% - 16px)}
+    #profPanel{left:8px;right:8px;width:auto;top:auto;bottom:8px;height:42%}
+    #detPanel{left:0;right:0;top:auto;bottom:0;width:auto;height:78%;transform:translateY(calc(100% + 30px))}
+    #detPanel.open{transform:none}
+    #detPanel.open.peek{transform:translateY(calc(100% - 46px))}
+    #dPeek{display:inline-block}
+    #hTop{flex-wrap:wrap;gap:6px;padding:6px 8px}
+    #hTop>span:nth-child(2){display:none}
+    #hTools{top:auto;bottom:calc(22% + 10px)}
+    #detPanel.open:not(.peek)~#hTools{display:none!important}
+    #hLayers{display:none}
+    .leaflet-control-zoom{display:none}
+  }
+</style></head><body class="scan">
+
+<div id="boot"></div>
+
+<!-- ============================ HOME / PLANNING ============================ -->
+<div id="home">
+  <div id="homeMap"></div>
+  <div id="earthGlow"></div>
+  <div class="seccard" id="pSecCard"></div>
+  <div id="hTop">
+    <b style="letter-spacing:.42em;color:var(--accent)">ULTRALINK</b><span>ESCORT · MISSION PLANNING</span>
+    <span class="sp"></span>
+    <span class="tag" id="hRelay">RELAY …</span><span id="hClk">--:--:--</span>
+    <button class="ghost" id="hHelp" style="padding:4px 8px;font-size:9px" title="How this screen works">? HELP</button>
+    <button class="ghost" id="hSet" style="padding:4px 8px;font-size:9px">⚙ SETTINGS</button>
+    <a href="index.html" style="color:var(--dim);text-decoration:none">← MODE SELECT</a>
+  </div>
+
+  <div class="hpanel" id="profPanel">
+    <div class="hh">MISSION PROFILES<span class="sp"></span><span class="tag" id="pCount">0</span></div>
+    <div class="hb" id="profList"></div>
+    <div class="hf">
+      <button class="primary" id="pNew" style="flex:1 1 100%">＋ NEW MISSION PROFILE</button>
+      <button class="ghost" id="pJoin" style="flex:1">JOIN LIVE MISSION</button>
+      <button class="ghost" id="pImport" style="flex:1" title="Load a saved .json profile file">IMPORT</button>
+    </div>
+  </div>
+
+  <div class="hpanel" id="detPanel">
+    <div class="hh"><span id="dTitle">MISSION DETAILS</span><span class="sp"></span><span class="tag" id="dDirty"></span><button class="ghost" id="dPeek" style="padding:3px 9px" title="Show / hide the map">▾ MAP</button><button class="ghost" id="dClose" style="padding:3px 9px" title="Close panel">✕</button></div>
+    <div class="hb" id="dBody"></div>
+    <div class="hf">
+      <button id="dSave" style="flex:1">SAVE</button>
+      <button id="dExport" class="ghost" title="Download this profile as a file">EXPORT</button>
+      <button id="dDel" class="ghost danger">DELETE</button>
+      <button id="dGo" class="primary" style="flex:1 1 100%;padding:13px" title="Opens the mission so riders can join with the code">▶ ACTIVATE MISSION</button>
+    </div>
+  </div>
+  <div class="hudbox" id="hTools"></div>
+  <div class="hudbox lyr" id="hLayers" style="position:absolute;right:16px;bottom:16px;z-index:650"></div>
+  <input type="file" id="impFile" accept=".json,application/json" style="display:none">
+</div>
+
+<!-- ============================== OPS SCREEN ============================= -->
+<div id="shell">
+  <div id="top">
+    <b style="letter-spacing:.42em;color:var(--accent)">ULTRALINK</b>
+    <span class="tag" id="tMis">—</span><span class="tag" id="tCode">—</span>
+    <span class="sp"></span>
+    <span class="tag" id="tUnits">0 UNITS</span><span class="tag" id="tRtt">RTT --</span>
+    <span class="dot" id="tLink"></span><span id="tClk">--:--:--</span>
+    <button class="ghost" id="btnKeys">PTT KEYMAP</button>
+    <button class="ghost" id="btnLayout">LAYOUT</button>
+  </div>
+  <div id="clockbar">
+    <span>MISSION CLOCK</span><span class="big2" id="mClock">00:00:00</span>
+    <button id="btnClock" class="ghost">START</button>
+    <button id="btnTarget" class="ghost">TARGET</button>
+    <span class="tag" id="mTarget">TARGET --:--</span>
+    <span class="tag" id="mDelta">DELTA --</span>
+    <button id="btnSched" class="ghost" title="Departure countdown">T-MINUS</button><span class="tag" id="mStart">NO SCHEDULE</span>
+    <span class="sp"></span>
+    <button id="btnWind" class="ghost" title="Wind source and manual override"><span id="windTag">WIND --</span></button>
+    <button id="btnSectors" class="ghost" title="Sector times of every rider">SECTOR BOARD</button>
+    <button id="btnSettings" class="ghost">⚙ SETTINGS</button>
+    <button id="btnAbort" class="ghost danger">ABORT MISSION</button>
+  </div>
+  <div id="main">
+    <div id="left">
+      <div class="hdr">TRACKED UNITS<span class="sp"></span><span class="muted" id="uCount">0</span></div>
+      <div id="units"></div>
+    </div>
+    <div id="drag"></div>
+    <div id="right">
+      <div id="map">
+        <div id="txbanner"></div>
+        <div id="cdBanner"></div>
+        <div id="hud">
+          <div class="hudbox lyr" id="layers"></div>
+          <div class="hudbox" id="mapopts"></div>
+        </div>
+        <div class="hudbox" id="comms">
+          <div class="row" style="margin-bottom:6px"><b style="font-size:10px;color:var(--accent)">COMMS LOG</b><span class="sp"></span><span id="netq" class="tag">NET</span></div>
+          <div id="log"></div>
+        </div>
+        <div id="offAlert"><div class="oh"><span>⚠ RIDER OFF ROUTE</span><span class="sp"></span><button id="btnMaster" title="Silence and acknowledge (M)">MASTER ALERT</button></div><div class="ob" id="offRows"></div></div>
+        <div class="seccard" id="opsSecCard"></div>
+        <button id="btnReturn" title="Centre the map on the lead / selected rider (R)">◎ RETURN TO RIDER</button>
+        <div id="pttDock"><button id="pttTgt" class="ghost" title="Who the on-screen PTT talks to">TO: ALL</button><button id="pttBtn" title="Hold to talk">PTT</button></div>
+        <div id="riderPop"></div>
+      </div>
+      <div id="vdrag"></div>
+      <div id="bottom">
+        <div id="gbox"><canvas id="graph"></canvas>
+          <div id="gctl"><span class="tag" id="gwin">FULL</span><button class="ghost" id="gOut" title="Zoom out">−</button><button class="ghost" id="gIn" title="Zoom in">＋</button><button class="ghost" id="gFull" title="Show whole route">FULL</button></div>
+          <div id="gtip"></div>
+        </div>
+        <div id="sel">
+          <div class="row"><b id="selName" style="font-size:13px;letter-spacing:.18em">SELF · ESCORT</b><span class="sp"></span><span class="tag" id="selKey">PTT —</span></div>
+          <div class="kv" id="selKv"></div>
+          <div class="row" style="margin-top:10px;gap:6px">
+            <button id="btnFollow" class="ghost" style="flex:1;font-size:9px">FOLLOW</button>
+            <button id="btnMon" class="ghost" style="flex:1;font-size:9px">MONITOR ON</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlgJoin"><div style="padding:20px;width:min(380px,88vw)">
+  <h3>JOIN LIVE MISSION</h3><div class="hint" style="margin:8px 0 12px">Use this on a second escort laptop. Enter the code the lead escort activated.</div>
+  <label>Mission code</label><input id="jcode" style="width:100%;text-align:center;font-size:22px;letter-spacing:.4em;text-transform:uppercase">
+  <div style="height:10px"></div><label>Your escort callsign</label><input id="jcall" placeholder="ESCORT-2" style="width:100%;text-transform:uppercase">
+  <div id="jerr" style="color:var(--bad);font-size:11px;margin-top:8px"></div>
+  <div class="row" style="margin-top:14px;gap:8px"><button class="primary" id="jgo" style="flex:1">JOIN</button><button class="ghost" onclick="this.closest('dialog').close()" style="flex:1">CANCEL</button></div>
+</div></dialog>
+<dialog id="dlgSecT" style="max-width:560px;width:94vw"></dialog>
+<dialog id="dlgHelp" style="max-width:560px;width:94vw"></dialog>
+<dialog id="dlgKeys"></dialog>
+<dialog id="dlgTarget"></dialog>
+<dialog id="dlgAbort"></dialog>
+<dialog id="dlgWind"></dialog>
+<dialog id="dlgSched"></dialog>
+<dialog id="dlgBoard" style="max-width:820px;width:96vw"></dialog>
+<dialog id="dlgSet" style="max-width:640px">
+  <div style="padding:18px">
+    <div class="row"><h3>SETTINGS</h3><span class="sp"></span><button id="setReset" class="ghost danger" style="font-size:9px;padding:5px 8px">RESET ALL</button></div>
+    <div class="row" id="setTabs" style="margin-top:12px;gap:4px;flex-wrap:wrap">
+      <button data-t="appearance" class="primary">APPEARANCE</button>
+      <button data-t="audio">AUDIO</button>
+      <button data-t="keys">KEYBINDS</button>
+      <button data-t="map">MAP &amp; UNITS</button>
+      <button data-t="units">UNIT COLOURS</button>
+    </div>
+    <div id="setBody"></div>
+    <button style="margin-top:14px" onclick="this.closest('dialog').close()">DONE</button>
+  </div>
+</dialog>
+<dialog id="dlgEnded"></dialog>
+<button id="audioPrompt">🔊 TAP TO ENABLE RADIO AUDIO</button>
+<script src="leaflet.js"></script>
+<script src="ul.js"></script><script src="ul-settings.js"></script><script src="ul-fx.js"></script><script src="ul-ui.js"></script>
+<script src="ul-sectors.js"></script><script src="ul-map.js"></script><script src="ul-wind.js"></script><script src="ul-boot.js"></script>
+<script src="escort-plan.js"></script><script src="escort.js"></script></body></html>
