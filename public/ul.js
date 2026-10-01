@@ -77,6 +77,7 @@
     }
     connect(url) {
       this.url = url || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+      clearTimeout(this._rt); this.lastPong = Date.now();
       const ws = this.ws = new WebSocket(this.url);
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
@@ -87,21 +88,31 @@
         this._hb = setInterval(() => this.send({ t: 'ping', ts: Date.now() }), 5000);
       };
       ws.onclose = () => {
+        if (ws !== this.ws) return;            // an old socket replaced by kick()
         clearInterval(this._hb);
         this.emit('close');
         const wait = Math.min(8000, 500 * 2 ** this.retry++);
-        setTimeout(() => this.connect(this.url), wait);
+        clearTimeout(this._rt); this._rt = setTimeout(() => this.connect(this.url), wait);
       };
       ws.onerror = () => {};
       ws.onmessage = (e) => {
         if (typeof e.data !== 'string') return this.emit('binary', e.data);
         const m = JSON.parse(e.data);
-        if (m.t === 'pong') { this.rtt = Date.now() - m.ts; this.emit('rtt', this.rtt); return; }
+        if (m.t === 'pong') { this.lastPong = Date.now(); this.rtt = Date.now() - m.ts; this.emit('rtt', this.rtt); return; }
         this.emit(m.t, m);
         this.emit('*', m);
       };
     }
     get ready() { return this.ws && this.ws.readyState === 1; }
+    /** called when the app comes back to the screen: reconnect now if the socket died or went silent */
+    kick() {
+      if (!this.url) return;
+      const st = this.ws ? this.ws.readyState : 3;
+      if (st === 1 && Date.now() - (this.lastPong || 0) < 12000) return;
+      if (st === 0) return;
+      const old = this.ws; this.ws = null; try { old && old.close(); } catch (e) {}
+      clearInterval(this._hb); this.retry = 0; this.connect(this.url);
+    }
     send(m) { this.ready ? this.ws.send(JSON.stringify(m)) : this.queue.push(m); }
     sendBinary(b) { if (this.ready) this.ws.send(b); }
     emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
@@ -155,10 +166,20 @@
       if (!this._micP) {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { this.micError = 'NO AUDIO API (needs HTTPS)'; return Promise.reject(new Error(this.micError)); }
         this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-          .then(s => { this.stream = s; this.track = s.getAudioTracks()[0]; this.track.enabled = true; this.peers.forEach(p => this.gatePeer(p)); return s; })
+          .then(s => { this.stream = s; this.track = s.getAudioTracks()[0]; this.track.enabled = true; this.track.addEventListener('ended', () => { if (document.visibilityState === 'visible') this.recover(); }); this.peers.forEach(p => this.gatePeer(p)); return s; })
           .catch(e => { this._micP = null; this.micError = e.message || 'MIC DENIED'; throw e; });
       }
       return this._micP;
+    }
+    /** after a phone call / app switch some phones kill the mic track: get a fresh one and re-attach it everywhere */
+    recover() {
+      this.audioCtx();
+      if (!this.track || this.track.readyState !== 'ended') return Promise.resolve(false);
+      try { this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      if (this._proc) { try { this._proc.disconnect(); } catch (e) {} this._proc = null; }
+      this.stream = null; this.track = null; this._micP = null;
+      this.peers.forEach(p => { p.sent = undefined; });
+      return this.mic().then(() => { this.applyGate(); this.emit('recovered'); return true; }).catch(() => false);
     }
     /* ---- roster sync: create peers where I am the initiator, drop peers that left ---- */
     sync(ids) {

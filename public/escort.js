@@ -739,6 +739,7 @@
     $('audioPrompt').onclick = () => { voice.audioCtx(); $('audioPrompt').classList.remove('show'); };
     voice.mic().catch(() => log('SYS', 'MIC DENIED — PTT TX DISABLED', '#ff4d6d'));
     voice.sync([...units.keys()]);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || ended) return; link.kick(); voice.audioCtx(); voice.recover().then(f => f && UL.toast('MICROPHONE RESTORED', 'ok')); });
     $('netq').insertAdjacentHTML('beforebegin', '<span id="vq" class="tag" title="Voice path: peer-to-peer links / relay fallback">VOICE …</span>');
   }
   function setVoiceMode(mode) {

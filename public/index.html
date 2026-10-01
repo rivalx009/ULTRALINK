@@ -11,6 +11,8 @@
   <div class="panel corner" style="width:min(460px,92vw);padding:22px">
     <div class="sub" style="margin-bottom:14px">SELECT OPERATING MODE</div>
     <a href="rider.html" style="text-decoration:none"><button class="primary" style="width:100%;padding:18px;font-size:15px">◮ RIDER MODE</button></a>
+    <a href="ultralink.apk" id="apk" download style="display:none;text-decoration:none"><button class="ghost" style="width:100%;padding:12px;margin-top:8px;font-size:11px">⤓ DOWNLOAD ANDROID RIDER APP</button></a>
+    <div class="muted" id="apkNote" style="display:none;font-size:10px;margin-top:6px">The app keeps GPS and radio running with the screen off. iPhone riders: use RIDER MODE above.</div>
     <div class="muted" style="font-size:10px;margin:8px 0 16px">Phone or laptop · Android, iPhone, Windows, Mac · GPS (+ BLE sensors on Chrome/Edge) · PTT radio</div>
     <a href="escort.html" style="text-decoration:none"><button style="width:100%;padding:18px;font-size:15px">▣ ESCORT MODE</button></a>
     <div class="muted" style="font-size:10px;margin-top:8px">Laptop, tablet or phone · Windows, Mac, Android, iPhone · mission control · map &amp; comms</div>
@@ -22,6 +24,7 @@
 (function(){const ua=navigator.userAgent,ios=/iP(hone|ad|od)/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1),standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
  const t=standalone?'':ios?'Install: Safari → Share → <b>Add to Home Screen</b>':/Android/.test(ua)?'Install: Chrome menu ⋮ → <b>Add to Home screen</b>':'Install: Chrome / Edge address bar → <b>Install app</b> icon';
  if(!window.isSecureContext&&location.hostname!=='localhost')document.getElementById('inst').innerHTML='<span style="color:var(--warn)">Open this page over HTTPS — GPS and the microphone are blocked on plain http.</span>';else document.getElementById('inst').innerHTML=t;})();
+if(/Android/.test(navigator.userAgent)&&!/UltralinkApp/.test(navigator.userAgent)){document.getElementById('apk').style.display='block';document.getElementById('apkNote').style.display='block';}
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 fetch('health').then(r=>r.text()).then(()=>net.innerHTML='LINK: <span style="color:var(--good)">RELAY ONLINE</span> · '+location.host)
  .catch(()=>net.innerHTML='LINK: <span style="color:var(--bad)">RELAY OFFLINE</span>');

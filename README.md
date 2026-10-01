@@ -1,4 +1,4 @@
-# ULTRALINK — cycling telemetry & comms  (v1.1)
+# ULTRALINK — cycling telemetry & comms  (v1.2)
 
 Rider ⇄ relay (Node, zero dependencies) ⇄ Escort.  
 **Both modes run in any modern browser on Windows, macOS, Android and iPhone/iPad** (Chrome, Edge, Safari, Firefox).
@@ -18,6 +18,12 @@ GPS, the microphone and "install app" need **HTTPS** (the Render URL is HTTPS; `
 - **macOS:** double-click `ultralink-escort.command` or `ultralink-rider.command` (first time: right-click → Open).  
   Both launchers ask once for the relay URL (saved in `relay.txt`; blank = run the relay on this computer). Add `reset` to change it.
 - **Phones:** open the URL, then *Add to Home Screen* (Safari → Share, or Chrome menu ⋮) for a full-screen app.
+
+## Android rider app (screen-off tracking)
+- Riders on Android tap **DOWNLOAD ANDROID RIDER APP** on the start page (file `public/ultralink.apk`), install it, enter the web address once.
+- GPS, telemetry and radio keep running with the screen off (notification "ULTRALINK active" with TALK / STOP TRACKING buttons; a Bluetooth/headset button toggles talk).
+- iPhone riders keep using the link in Safari with the screen on. After a call or app switch the page now reconnects, restores the mic and sends its position automatically.
+- The app source + signing key are kept separately (not in this repo).
 
 ## Planning (escort)
 1. Opens on an **earth view** (your own location is no longer shown). Saved missions appear as pins.

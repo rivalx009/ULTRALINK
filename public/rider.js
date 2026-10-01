@@ -8,6 +8,16 @@
   let clockStart = null, clockStop = null, targetSec = null;
   let voice = null, mission = null, me = null, useBle = false, wake = null, roster = [], ended = false, wasOff = false;
   const P = UL.platform || {};
+  /* Android app (UltraApp bridge): native GPS + foreground service keep tracking and radio alive with the screen off */
+  const APP = window.UltraApp || null;
+  window.ULNative = {
+    onPos(lat, lon, acc, spd, hdg, alt, ts) { tel.onPosition({ coords: { latitude: lat, longitude: lon, accuracy: acc, speed: spd < 0 ? null : spd, heading: hdg < 0 ? null : hdg, altitude: alt }, timestamp: ts || Date.now() }); },
+    onGpsError(msg) { $('acc').textContent = 'GPS ' + msg; $('acc').className = 'tag bad'; },
+    ptt(on) { on ? open() : shut(); },
+    togglePtt() { live ? shut() : open(); },
+    resume() { recoverAll(); }
+  };
+  const app = (fn, ...a) => { try { APP && APP[fn] && APP[fn](...a); } catch (e) {} };
 
   /* ---------------------------------------------------------- login form */
   $('code').value = localStorage.ulCode || '';
@@ -21,6 +31,8 @@
     $('srcBle').disabled = true; $('srcBle').title = 'Web Bluetooth is not available in this browser';
     $('bleNote').innerHTML = P.ios ? 'iPhone / iPad: BLE sensors are not supported by Safari — phone GPS only. Heart rate can still come from an Android phone or a laptop.' : 'BLE sensors need Chrome or Edge (Android, Windows, macOS). Phone GPS works everywhere.';
   }
+  if (/Android/.test(navigator.userAgent) && !APP) $('getApp').style.display = 'block';
+  if (APP) { const ms = document.querySelector('#login .sub a'); if (ms) ms.style.display = 'none'; }
   ['code', 'callsign'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); deploy(); } }));
 
   async function deploy() {
@@ -63,7 +75,7 @@
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCd = null; applyRoute(); });
   link.on('mission.clock', m => { if (m.clockStart && !clockStart && !m.clockStop) { fx.go(); UL.toast('MISSION CLOCK RUNNING — GO', 'ok'); } clockStart = m.clockStart; clockStop = m.clockStop; targetSec = m.targetSec; renderClock(); });
   link.on('mission.ended', m => {
-    ended = true; clearTimeout(retryT);
+    ended = true; clearTimeout(retryT); app('stopTracking');
     m.mode === 'close' ? fx.success() : fx.abort();
     $('dlgEnd').innerHTML = `<div style="padding:22px;text-align:center">
       <div style="color:var(--bad);font-size:16px;letter-spacing:.3em">${m.reason}</div>
@@ -104,8 +116,10 @@
         <div class="row" style="margin-top:12px"><label style="flex:1">CRT scanlines</label><input type="checkbox" id="rScan" ${v.scanlines ? 'checked' : ''}></div>
         <div style="margin-top:10px"><label>Voice path</label>
           <select id="rVoice" style="width:100%"><option value="auto" ${(localStorage.ulVoice || 'auto') === 'auto' ? 'selected' : ''}>auto (P2P, fall back to relay)</option><option value="relay" ${localStorage.ulVoice === 'relay' ? 'selected' : ''}>relay only</option></select></div>
+        ${APP ? '<button class="ghost" id="rServer" style="width:100%;margin-top:12px">CHANGE SERVER ADDRESS</button>' : ''}
         <button class="primary" style="width:100%;margin-top:16px;padding:14px" onclick="this.closest('dialog').close()">DONE</button></div>`;
       $('dlgR').showModal();
+      if (APP && document.getElementById('rServer')) document.getElementById('rServer').onclick = () => app('resetServer');
       $('rTheme').onchange = e => cfg.set('theme', e.target.value);
       $('rAcc').oninput = e => cfg.set('accent', e.target.value);
       $('rUnits').onchange = e => { cfg.set('units', e.target.value); };
@@ -171,6 +185,7 @@
     else { $('secChip').textContent = sectors.length > 1 ? 'AWAITING CHECKPOINT' : 'SECTOR --'; $('secChip').className = 'tag'; }
   }
   function startGeo() {
+    if (APP) { app('startTracking', mission ? mission.code : '', localStorage.ulCallsign || ''); $('src').textContent = 'APP GPS'; return; }
     if (!navigator.geolocation) return fail('NO GEOLOCATION');
     navigator.geolocation.watchPosition(
       p => tel.onPosition(p),
@@ -178,9 +193,20 @@
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
     );
   }
+  /** back on screen after a call / app switch: reconnect, fresh mic if it was lost, sound back on, position out now */
+  let lastRecover = 0;
+  function recoverAll() {
+    if (!started || ended || Date.now() - lastRecover < 1500) return; lastRecover = Date.now();
+    link.kick();
+    if (voice) voice.recover().then(fixed => { if (fixed) UL.toast('MICROPHONE RESTORED', 'ok'); });
+    if (voice) voice.audioCtx();
+    if (tel.state && tel.state.lat != null) { lastTx = 0; link.send({ t: 'telemetry', data: tel.state }); }
+    UL.toast('BACK ONLINE', 'ok', 1800);
+  }
   async function keepAwake() {
     try { wake = await navigator.wakeLock.request('screen'); } catch (e) {}
     document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') recoverAll();
       if (document.visibilityState === 'visible') { try { wake = await navigator.wakeLock.request('screen'); } catch (e) {} }
     });
   }
@@ -262,8 +288,8 @@
   const btn = $('ptt');
   let live = false;
   /* voice.transmit() sends the PTT banner and opens the mic just after the key beep; release() closes both */
-  const open = () => { if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); };
-  const shut = () => { if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = 'PUSH TO TALK'; };
+  const open = () => { if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); app('setTalking', true); };
+  const shut = () => { if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = 'PUSH TO TALK'; app('setTalking', false); };
   btn.addEventListener('pointerdown', e => { e.preventDefault(); try { btn.setPointerCapture(e.pointerId); } catch (x) {} open(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, shut));
   btn.oncontextmenu = e => e.preventDefault();
