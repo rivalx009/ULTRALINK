@@ -23,7 +23,8 @@
     sound: true,
     uiSounds: false,               // interface clicks / panel whooshes
     volume: 55,
-    offRouteM: 60,                 // off-route alert threshold (metres from the route)
+    offRouteM: 60,
+    snapRoute: true,               // draw units on the route line when GPS puts them within 30 m of it                 // off-route alert threshold (metres from the route)
     gaugeMax: 70,                  // km/h at full scale on speed gauges
     graphWindow: 3,                // km shown when the elevation graph homes in on a unit
     windBand: true,

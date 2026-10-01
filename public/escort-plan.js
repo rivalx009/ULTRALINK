@@ -429,8 +429,7 @@
     routeGroup = L.layerGroup().addTo(hmap);
     const S = UL.normaliseSectors(cur.sectors, built.distance), P = built.points;
     S.forEach(s => {
-      const seg = P.filter(p => p.d >= s.start && p.d <= s.end).map(p => [p.lat, p.lon]);
-      const a0 = UL.routeAt(built, s.start), a1 = UL.routeAt(built, s.end); seg.unshift([a0.lat, a0.lon]); seg.push([a1.lat, a1.lon]);
+      const seg = UL.sectorLine(built, s);
       const hl = secIdx === s.idx;
       L.polyline(seg, { color: '#000', weight: hl ? 10 : 7, opacity: .55, interactive: false }).addTo(routeGroup);
       L.polyline(seg, { color: s.color, weight: hl ? 6 : 3.5, opacity: .95, interactive: false }).addTo(routeGroup);

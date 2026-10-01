@@ -206,7 +206,7 @@
     opsSec = i; follow = false; syncFollowBtn();
     if (innerWidth < 760 && !popOff && units.get(sel)?.role === 'rider') { popOff = true; renderPop(true); }
     if (hiLayer) map.removeLayer(hiLayer);
-    const seg = route.points.filter(p => p.d >= s.start && p.d <= s.end).map(p => [p.lat, p.lon]);
+    const seg = UL.sectorLine(route, s);
     hiLayer = L.polyline(seg, { color: '#fff', weight: 9, opacity: .28, interactive: false }).addTo(map);
     const wide = innerWidth >= 760, rp = wide ? 380 + ($('map').classList.contains('popopen') ? 312 : 0) : 40;
     map.flyToBounds(UL.sectorBounds(route, s), { paddingTopLeft: [40, 40], paddingBottomRight: [rp, wide ? 40 : Math.round(innerHeight * .45)], duration: 1.1, maxZoom: 17 });
@@ -223,7 +223,7 @@
     routeGroup = L.layerGroup().addTo(map);
     const P = route.points;
     sectors.forEach(s => {
-      const seg = P.filter(p => p.d >= s.start && p.d <= s.end).map(p => [p.lat, p.lon]);
+      const seg = UL.sectorLine(route, s);
       if (seg.length > 1) { L.polyline(seg, { color: '#000', weight: 7, opacity: .5 }).addTo(routeGroup); L.polyline(seg, { color: s.color, weight: 3, opacity: .95 }).addTo(routeGroup); }
       const a = UL.routeAt(route, s.start);
       L.marker([a.lat, a.lon], { icon: UL.cpIcon(s.color, UL.cpLabel(s)), zIndexOffset: 100, title: UL.cpLabel(s) + ' · ' + s.name })
@@ -246,9 +246,14 @@
       html: `<div style="color:${c}" class="${OFF.get(u.id)?.on ? 'offr' : ''}">${UL.unitSvg(u.role, c, hd)}<span class="lbl">${isSelf ? '● ' : ''}${u.role === 'rider' && u.callsign === leadName ? '★ ' : ''}${esc(u.callsign)}${OFF.get(u.id)?.on ? ' · OFF ROUTE' : ''}</span></div>`
     });
   }
+  /** where to draw a unit: on the route line when GPS says it is within 30 m of it (removes GPS wobble), else the raw fix */
+  function shownLL(d) {
+    if (cfg.v.snapRoute !== false && route && typeof d.offRoute === 'number' && d.offRoute < 30 && d.covered != null) { const r = UL.routeAt(route, d.covered); if (r) return [r.lat, r.lon]; }
+    return [d.lat, d.lon];
+  }
   function placeUnit(u) {
     const d = u.data; if (!d || d.lat == null || !map) return;
-    const ll = [d.lat, d.lon];
+    const ll = shownLL(d);
     if (!u.marker) {
       u.marker = L.marker(ll, { icon: icon(u), zIndexOffset: 500 }).addTo(map);
       u.marker.on('click', () => selectUnit(u.id));
@@ -271,9 +276,9 @@
     const s = e.detail;
     if (!map) return;
     if (!selfMarker && s.lat != null) {
-      selfMarker = L.marker([s.lat, s.lon], { icon: icon(selfUnit(), true), zIndexOffset: 900 }).addTo(map);
+      selfMarker = L.marker(shownLL(s), { icon: icon(selfUnit(), true), zIndexOffset: 900 }).addTo(map);
       selfMarker.on('click', () => selectUnit('self'));
-    } else if (selfMarker) { selfMarker.setLatLng([s.lat, s.lon]); selfMarker.setIcon(icon(selfUnit(), true)); }
+    } else if (selfMarker) { selfMarker.setLatLng(shownLL(s)); selfMarker.setIcon(icon(selfUnit(), true)); }
     if (follow && Date.now() > flyUntil && sel === 'self' && s.lat != null && (s.speed || 0) > 0.6) map.panTo([s.lat, s.lon], { animate: true, duration: .4 });
     if (sel === 'self') renderSel();
     renderUnits();
@@ -850,6 +855,7 @@
       h += row('Tactical grid overlay', `<input type="checkbox" data-s="gridOverlay" ${v.gridOverlay ? 'checked' : ''}>`);
       h += row('Zoom level when following <span class="muted">' + v.zoomFollow + '</span>', `<input type="range" min="12" max="19" data-s="zoomFollow" value="${v.zoomFollow}">`);
       h += row('Graph window when homing in <span class="muted">' + v.graphWindow + ' km</span>', `<input type="range" min="1" max="20" step="1" data-s="graphWindow" value="${v.graphWindow}">`);
+      h += row('Snap units onto the route line (when within 30 m)', `<input type="checkbox" data-s="snapRoute" ${v.snapRoute !== false ? 'checked' : ''}>`);
       h += row('Off-route alert distance <span class="muted">' + v.offRouteM + ' m</span>', `<input type="range" min="20" max="300" step="10" data-s="offRouteM" value="${v.offRouteM}">`);
       h += row('Wind band on elevation graph', `<input type="checkbox" data-s="windBand" ${v.windBand ? 'checked' : ''}>`);
       h += row('Motion trail length <span class="muted">' + v.trailLength + ' pts</span>', `<input type="range" min="50" max="2000" step="50" data-s="trailLength" value="${v.trailLength}">`);

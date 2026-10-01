@@ -69,6 +69,11 @@
       bearing: UL.bearing(a, b) };
   }
 
+  /** polyline of one sector that starts and ends exactly at its checkpoints (no gaps between sectors) */
+  function sectorLine(route, s) {
+    const a = routeAt(route, s.start), b = routeAt(route, s.end);
+    return [[a.lat, a.lon]].concat(route.points.filter(p => p.d > s.start && p.d < s.end).map(p => [p.lat, p.lon]), [[b.lat, b.lon]]);
+  }
   /** Per-unit checkpoint stopwatch. Feed (covered metres, timestamp ms). Emits via callbacks. */
   class SectorTimer {
     constructor(sectors, total, cb) {
@@ -207,5 +212,5 @@
   }
 
   global.UL = global.UL || {};
-  Object.assign(global.UL, { cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
+  Object.assign(global.UL, { sectorLine, cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
 })(window);

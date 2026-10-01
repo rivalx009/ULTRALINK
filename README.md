@@ -1,4 +1,4 @@
-# ULTRALINK — cycling telemetry & comms  (v1.2)
+# ULTRALINK — cycling telemetry & comms  (v1.3)
 
 Rider ⇄ relay (Node, zero dependencies) ⇄ Escort.  
 **Both modes run in any modern browser on Windows, macOS, Android and iPhone/iPad** (Chrome, Edge, Safari, Firefox).

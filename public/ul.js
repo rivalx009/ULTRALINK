@@ -47,20 +47,31 @@
     for (let i = 1; i < pts.length; i++) { const dz = pts[i].ele - pts[i - 1].ele; if (dz > 0) gain += dz; }
     return { name, points: pts, distance: d, gain };
   }
-  /** nearest route point (windowed search around lastIdx for speed) */
+  /** exact position on the route: perpendicular projection onto the nearest route segment
+      (windowed search around lastIdx for speed, full search if the window looks wrong) */
   function snap(route, pos, lastIdx) {
     const P = route.points; if (!P || !P.length) return null;
-    let from = 0, to = P.length - 1;
-    if (lastIdx != null) { from = Math.max(0, lastIdx - 120); to = Math.min(P.length - 1, lastIdx + 400); }
-    let best = from, bestD = Infinity;
-    for (let i = from; i <= to; i++) {
-      const dd = (P[i].lat - pos.lat) ** 2 + (P[i].lon - pos.lon) ** 2;
-      if (dd < bestD) { bestD = dd; best = i; }
-    }
-    const p = P[best];
-    const off = haversine(p, pos);
-    return { idx: best, point: p, covered: p.d, remaining: route.distance - p.d, offRoute: off, ele: p.ele, grade: p.grade };
+    if (P.length === 1) return { idx: 0, point: P[0], covered: 0, remaining: route.distance, offRoute: haversine(P[0], pos), ele: P[0].ele, grade: P[0].grade, lat: P[0].lat, lon: P[0].lon };
+    const kx = 111320 * Math.cos(pos.lat * Math.PI / 180), ky = 110540;
+    const search = (from, to) => {
+      let best = null;
+      for (let i = Math.max(1, from); i <= to; i++) {
+        const A = P[i - 1], B = P[i];
+        const ax = (A.lon - pos.lon) * kx, ay = (A.lat - pos.lat) * ky, dx = (B.lon - A.lon) * kx, dy = (B.lat - A.lat) * ky, L2 = dx * dx + dy * dy;
+        let t = L2 ? -(ax * dx + ay * dy) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ox = ax + dx * t, oy = ay + dy * t, off = Math.sqrt(ox * ox + oy * oy);
+        if (!best || off < best.off) best = { i, t, off };
+      }
+      return best;
+    };
+    let r = lastIdx != null ? search(lastIdx - 120, Math.min(P.length - 1, lastIdx + 400)) : null;
+    if (!r || r.off > 150) { const f = search(1, P.length - 1); if (!r || f.off < r.off) r = f; }
+    const A = P[r.i - 1], B = P[r.i], t = r.t;
+    const d = A.d + (B.d - A.d) * t, idx = t < 0.5 ? r.i - 1 : r.i;
+    return { idx, point: P[idx], covered: d, remaining: route.distance - d, offRoute: r.off,
+      ele: A.ele + (B.ele - A.ele) * t, grade: B.grade != null ? B.grade : A.grade, lat: A.lat + (B.lat - A.lat) * t, lon: A.lon + (B.lon - A.lon) * t };
   }
+
 
   /* ------------------------------------------------------------- filters  */
   class EMA {
