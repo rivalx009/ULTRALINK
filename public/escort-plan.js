@@ -12,6 +12,31 @@
     'TERRAIN': () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Esri' }),
     'RELIEF': () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Esri' })
   };
+  /* optional reference overlays (transparent tiles on top of any base map) */
+  UL.REF = {
+    roads: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, pane: 'refPane', attribution: 'Esri' }),
+    places: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, pane: 'refPane', attribution: 'Esri' })
+  };
+  /** ROADS / PLACE NAMES / CHECKPOINTS toggles for one map, stored in the settings */
+  UL.mapOverlays = (map, host) => {
+    if (!map.getPane('refPane')) { const p = map.createPane('refPane'); p.style.zIndex = 250; p.style.pointerEvents = 'none'; }
+    const on = {}, c = UL.cfg;
+    const isOn = k => k === 'showCps' ? c.v.showCps !== false : !!c.v[k];
+    const sync = () => {
+      [['roads', 'overlayRoads'], ['places', 'overlayPlaces']].forEach(([k, key]) => {
+        const want = !!c.v[key];
+        if (want && !on[k]) on[k] = UL.REF[k]().addTo(map);
+        if (!want && on[k]) { map.removeLayer(on[k]); delete on[k]; }
+      });
+      document.body.classList.toggle('nocps', !isOn('showCps'));
+      if (host) host.querySelectorAll('[data-ov]').forEach(b => b.classList.toggle('on', isOn(b.dataset.ov)));
+    };
+    if (host) {
+      host.insertAdjacentHTML('beforeend', '<div style="margin:6px 0 4px">SHOW</div><button data-ov="overlayRoads" title="Roads and infrastructure">ROADS</button><button data-ov="overlayPlaces" title="Towns and place names">PLACE NAMES</button><button data-ov="showCps" title="Checkpoint dots">CHECKPOINTS</button>');
+      host.querySelectorAll('[data-ov]').forEach(b => b.onclick = () => { const k = b.dataset.ov; c.set(k, !isOn(k)); sync(); });
+    }
+    sync(); return sync;
+  };
   UL.makeGrid = () => {
     const g = L.gridLayer({ className: 'ul-grid' });
     g.createTile = function (coords) {
@@ -80,6 +105,7 @@
     $('hLayers').querySelectorAll('[data-l]').forEach(b => b.onclick = () => setHomeLayer(b.dataset.l));
     $('hEarth').onclick = () => toEarth();
     $('hFitRoute').onclick = () => fitRoute();
+    UL.mapOverlays(hmap, $('hLayers'));
     hmap.on('zoom', glow); glow();
     hmap.on('zoomend', () => hGrid.setOpacity(cfg.v.gridOverlay && hmap.getZoom() >= 9 ? 1 : 0));
     hmap.on('mousemove', onMapMove);

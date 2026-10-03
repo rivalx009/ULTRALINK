@@ -24,6 +24,9 @@
     uiSounds: false,               // interface clicks / panel whooshes
     volume: 55,
     offRouteM: 60,
+    overlayRoads: false,           // roads & infrastructure drawn over the map
+    overlayPlaces: false,          // town / place names drawn over the map
+    showCps: true,                 // checkpoint dots on the maps
     snapRoute: true,               // draw units on the route line when GPS puts them within 30 m of it                 // off-route alert threshold (metres from the route)
     gaugeMax: 70,                  // km/h at full scale on speed gauges
     graphWindow: 3,                // km shown when the elevation graph homes in on a unit

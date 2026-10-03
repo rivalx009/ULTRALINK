@@ -200,6 +200,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await esc.screenshot({ path: 'shot-ops-sector.png' });
   await esc.keyboard.press('Escape'); await sleep(300);
 
+  /* ---------------- overlays + checkpoint toggle ---------------- */
+  await esc.click('#mapopts [data-ov="overlayRoads"]'); await esc.click('#mapopts [data-ov="overlayPlaces"]'); await sleep(1200);
+  const ov = await esc.evaluate(() => ({ tiles: (() => { let n = 0; window.__map.eachLayer(l => { if (l.options && l.options.pane === 'refPane' && /World_Transportation|World_Boundaries/.test(l._url || '')) n++; }); return n; })(),
+    pane: !!window.__map.getPane('refPane'), on: [...document.querySelectorAll('#mapopts [data-ov].on')].map(b => b.dataset.ov) }));
+  check('roads + place-name overlays can be switched on', ov.pane && ov.tiles > 0 && ov.on.includes('overlayRoads') && ov.on.includes('overlayPlaces'), JSON.stringify(ov));
+  await esc.click('#mapopts [data-ov="showCps"]'); await sleep(300);
+  const cpHidden = await esc.evaluate(() => [...document.querySelectorAll('#map .cpdot')].every(e => getComputedStyle(e).display === 'none'));
+  await esc.click('#mapopts [data-ov="showCps"]'); await sleep(300);
+  const cpShown = await esc.evaluate(() => [...document.querySelectorAll('#map .cpdot')].some(e => getComputedStyle(e).display !== 'none'));
+  check('checkpoint dots can be hidden and shown', cpHidden && cpShown);
+  await esc.click('#mapopts [data-ov="overlayRoads"]'); await esc.click('#mapopts [data-ov="overlayPlaces"]');
+  check('rider phone has no off-route alert', await rider.evaluate(() => !document.getElementById('offBar') && !/OFF ROUTE/.test(document.body.innerText)));
+
   /* ---------------- off-route master alert ---------------- */
   const ghost = await mk('GHOST-9', 50, 30, true);
   await esc.bringToFront();

@@ -1,4 +1,6 @@
-# ULTRALINK — cycling telemetry & comms  (v1.3)
+# ULTRALINK — cycling telemetry & comms  (v1.4)
+
+**New in v1.4:** map SHOW toggles — ROADS (roads & infrastructure), PLACE NAMES (towns/labels) and CHECKPOINTS (show/hide checkpoint dots). On the live map they are in the OVERLAY panel (top-left); on the planning map in the layer panel (bottom-right). Riders no longer get an off-route alert; escorts still do.
 
 Rider ⇄ relay (Node, zero dependencies) ⇄ Escort.  
 **Both modes run in any modern browser on Windows, macOS, Android and iPhone/iPad** (Chrome, Edge, Safari, Firefox).

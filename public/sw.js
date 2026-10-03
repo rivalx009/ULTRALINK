@@ -1,4 +1,4 @@
-const C='ultralink-v5';
+const C='ultralink-v6';
 const A=['./','index.html','rider.html','escort.html','sim.html','ul.css','ul.js','ul-fx.js','ul-ui.js','ul-sectors.js','ul-settings.js','ul-boot.js','ul-wind.js','ul-map.js','rider.js','escort.js','escort-plan.js','leaflet.js','leaflet.css','manifest.webmanifest','icon.svg','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(A).catch(()=>{})))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))));self.clients.claim()});

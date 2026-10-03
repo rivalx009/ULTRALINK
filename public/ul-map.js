@@ -13,6 +13,7 @@
   .cpdot.fin i{background:#fff!important;border-color:#ff4d6d}
   .cpdot span{position:absolute;left:15px;top:-2px;white-space:nowrap;font:600 9px/1.3 var(--mono);letter-spacing:.1em;color:#eafcff;background:rgba(3,10,13,.72);padding:0 4px;border-left:2px solid currentColor;pointer-events:none}
   .nolabels .cpdot span{display:none}
+  body.nocps .cpdot{display:none!important}
   .cpdot.drag{cursor:grab}
   .cpghost i{position:absolute;left:0;top:0;width:13px;height:13px;border-radius:50%;border:2px dashed #fff;background:rgba(0,229,255,.35);box-sizing:border-box}
   .cpghost span{position:absolute;left:17px;top:-1px;white-space:nowrap;font:600 9px var(--mono);letter-spacing:.1em;color:var(--accent);background:rgba(3,10,13,.85);padding:1px 5px}

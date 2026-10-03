@@ -225,11 +225,8 @@
     $('acc').className = 'tag' + ((s.acc || 99) < 25 ? ' ok' : '');
     $('avg').textContent = 'AVG ' + cfg.speed(s.avg).toFixed(1);
     if (s.offRoute != null) {
-      const T = cfg.v.offRouteM || 60, off = wasOff ? s.offRoute > T * 0.66 : s.offRoute > T;
-      if (off && !wasOff) { fx.alert(); navigator.vibrate?.([220, 120, 220, 120, 220]); }
-      wasOff = off; $('offBar').classList.toggle('show', off);
-      $('off').textContent = off ? 'OFF ROUTE ' + Math.round(s.offRoute) + 'm' : 'ON ROUTE';
-      $('off').className = 'tag' + (off ? ' bad' : ' ok');
+      /* off-route alerts are for the escorts only — nothing is shown or played on the rider phone */
+      $('off').textContent = 'ROUTE LOCKED'; $('off').className = 'tag ok';
     }
     renderClock();
     drawProfile();

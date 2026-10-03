@@ -180,7 +180,7 @@
 
   /* ==================================================================== MAP */
   const LAYERS = UL.LAYERS;
-  let activeLayer = null, gridLayer = null;
+  let activeLayer = null, gridLayer = null, syncOverlays = () => {};
   function initMap() {
     map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true });
     window.__map = map;
@@ -194,6 +194,7 @@
     $('oLbl').onclick = e => { e.target.classList.toggle('on'); document.body.classList.toggle('nolabels', !e.target.classList.contains('on')); };
     $('oRte').onclick = e => { e.target.classList.toggle('on'); routeGroup && (e.target.classList.contains('on') ? routeGroup.addTo(map) : map.removeLayer(routeGroup)); };
     $('oFit').onclick = () => fitRoute();
+    syncOverlays = UL.mapOverlays(map, $('mapopts'));
     gridLayer = UL.makeGrid().addTo(map); gridLayer.setOpacity(cfg.v.gridOverlay ? 1 : 0);
     if (route) { drawRoute(); fitRoute(true); } else map.setView([-20.3, 57.55], 12);
     map.on('dragstart', () => { follow = false; syncFollowBtn(); });
@@ -898,6 +899,7 @@
     cfg.apply();
     G.win = cfg.v.graphWindow * 1000;
     if (gridLayer) gridLayer.setOpacity(cfg.v.gridOverlay ? 1 : 0);
+    syncOverlays();
     units.forEach(u => { if (u.marker) u.marker.setIcon(icon(u)); if (u.trail) u.trail.setStyle({ color: cfg.colorFor(u.callsign, u.color) }); });
     if (selfMarker) selfMarker.setIcon(icon(selfUnit(), true));
     if (opsStarted) { renderUnits(); renderSel(); renderPop(true); renderWindTag(); }
