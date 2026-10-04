@@ -1,3 +1,3 @@
 # Link to the Windows installer (too big for the GitHub web uploader, so it lives in a GitHub Release).
 # Replace YOUR-NAME/YOUR-REPO with your GitHub repository, e.g. https://github.com/atlas/ultralink/releases/latest/download/ultralink-desktop-setup.exe
-https://github.com/YOUR-NAME/YOUR-REPO/releases/latest/download/ultralink-desktop-setup.exe
+https://github.com/rivalx009/ULTRALINK/releases/latest/download/ultralink-desktop-setup.exe
