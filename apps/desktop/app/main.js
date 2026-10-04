@@ -39,12 +39,14 @@ function openServer(page) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1600, height: 950, minWidth: 980, minHeight: 620, show: false, backgroundColor: '#05080a', title: 'ULTRALINK',
+    width: 1600, height: 950, minWidth: 980, minHeight: 620, show: false, fullscreen: true, fullscreenable: true, backgroundColor: '#05080a', title: 'ULTRALINK',
     icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')), autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, spellcheck: false }
   });
   win.webContents.setUserAgent(win.webContents.getUserAgent().replace(/Electron\/\S+\s?/, '') + UA_TAG);
-  win.once('ready-to-show', () => { win.maximize(); win.show(); });
+  /* always opens full screen (F11 or Ctrl+Shift+F leaves / re-enters full screen; leaving it gives a maximised window) */
+  win.once('ready-to-show', () => { win.show(); win.setFullScreen(true); });
+  win.on('leave-full-screen', () => { if (!win.isMaximized()) win.maximize(); });
   win.on('page-title-updated', e => { e.preventDefault(); win.setTitle('ULTRALINK'); });
   /* external links open in the normal browser, our own pages stay in the app */
   win.webContents.setWindowOpenHandler(({ url }) => { if (sameOrigin(url)) { win.loadURL(url); } else if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
@@ -108,7 +110,7 @@ function menu() {
     { label: 'Rider mode', accelerator: 'CmdOrCtrl+Shift+R', click: () => openServer('rider.html') },
     { type: 'separator' },
     { label: 'Change server address…', accelerator: 'CmdOrCtrl+Shift+S', click: () => local('setup.html', { server: server() || DEFAULT_SERVER }) },
-    { role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools', accelerator: 'CmdOrCtrl+Shift+I' },
+    { role: 'reload' }, { label: 'Full screen', accelerator: 'F11', click: () => win.setFullScreen(!win.isFullScreen()) }, { label: 'Full screen ', accelerator: 'CmdOrCtrl+Shift+F', visible: false, click: () => win.setFullScreen(!win.isFullScreen()) }, { role: 'toggleDevTools', accelerator: 'CmdOrCtrl+Shift+I' },
     { type: 'separator' }, { role: 'quit' }] }, { role: 'editMenu' }];
   Menu.setApplicationMenu(Menu.buildFromTemplate(t));
 }

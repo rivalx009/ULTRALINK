@@ -1,4 +1,6 @@
-# ULTRALINK — cycling telemetry & comms  (v1.5)
+# ULTRALINK — cycling telemetry & comms  (v1.5.1)
+
+**New in v1.5.1:** the loading screen now greets you first — on the start page, before the mode select (once per session; escort mode opened directly still shows it). The Windows app always opens **full screen** (F11 or Ctrl+Shift+F toggles; Alt+F4 quits).
 
 **New in v1.5**
 - **Apps:** Windows desktop app (`ultralink-desktop-setup.exe`) and a new Android app (`ultralink.apk`) — both offer **RIDER and ESCORT mode**, same grey chain-link icon and ULTRALINK wordmark. Download both from the start page.

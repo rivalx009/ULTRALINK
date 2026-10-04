@@ -1,7 +1,7 @@
 {
   "name": "ultralink-desktop",
   "productName": "ULTRALINK",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "ULTRALINK desktop app — escort and rider modes for Windows laptops",
   "main": "app/main.js",
   "author": "ULTRALINK",

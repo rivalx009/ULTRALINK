@@ -17,47 +17,11 @@
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
   /* ================================================================== BOOT */
-  const bootTasks = [
-    { id: 'core', label: 'TACTICAL CORE', subtitle: 'Initialising tactical core', min: 300,
-      run: async () => { try { localStorage.ulBoot = Date.now(); } catch (e) {} return { ok: true, text: 'ONLINE' }; } },
-    { id: 'gps', label: 'SATELLITE LINK', subtitle: 'Connecting to satellites', min: 400,
-      run: st => new Promise(res => {
-        if (!navigator.geolocation) return res({ warn: true, text: 'NO GEOLOCATION' });
-        const t = setTimeout(() => res({ warn: true, text: 'NO FIX — CONTINUING' }), 5000);
-        navigator.geolocation.getCurrentPosition(p => { clearTimeout(t); st.gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; res({ ok: true, text: 'GPS LOCK ±' + Math.round(p.coords.accuracy) + ' M' }); },
-          () => { clearTimeout(t); res({ warn: true, text: 'GPS DENIED / NO FIX' }); }, { enableHighAccuracy: false, timeout: 4800, maximumAge: 300000 });
-      }) },
-    { id: 'relay', label: 'RELAY NETWORK', subtitle: 'Bringing up the relays', min: 300,
-      run: async () => {
-        const t0 = performance.now();
-        try { const r = await fetch('health', { cache: 'no-store' }); if (!r.ok) throw 0; } catch (e) { return { warn: true, text: 'RELAY OFFLINE' }; }
-        const ms = Math.round(performance.now() - t0);
-        const ws = await new Promise(res => { try { const w = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host); const t = setTimeout(() => { try { w.close(); } catch (e) {} res(false); }, 3500); w.onopen = () => { clearTimeout(t); w.close(); res(true); }; w.onerror = () => { clearTimeout(t); res(false); }; } catch (e) { res(false); } });
-        return ws ? { ok: true, text: 'LINK OPEN · ' + ms + ' MS' } : { warn: true, text: 'HTTP OK · SOCKET BLOCKED' };
-      } },
-    { id: 'radio', label: 'RADIO SUITE', subtitle: 'Calibrating radio channels', min: 300,
-      run: async () => {
-        try { UL.fx.unlock(); } catch (e) {}
-        if (!navigator.mediaDevices) return { warn: true, text: 'NO AUDIO API' };
-        const p = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => { s.getTracks().forEach(t => t.stop()); return { ok: true, text: 'MIC READY · PTT ARMED' }; }).catch(() => ({ warn: true, text: 'MIC DENIED — PTT TX OFF' }));
-        return Promise.race([p, new Promise(r => setTimeout(() => r({ warn: true, text: 'MIC PERMISSION PENDING' }), 5000))]);
-      } },
-    { id: 'tiles', label: 'MAP LAYERS', subtitle: 'Downloading terrain and map layers', min: 300,
-      run: st => new Promise(res => {
-        const c = st.gps || { lat: -20.35, lon: 57.55 }, z = 12, n = 2 ** z;
-        const x = Math.floor((c.lon + 180) / 360 * n), y = Math.floor((1 - Math.log(Math.tan(c.lat * Math.PI / 180) + 1 / Math.cos(c.lat * Math.PI / 180)) / Math.PI) / 2 * n);
-        const img = new Image(), t = setTimeout(() => res({ warn: true, text: 'OFFLINE — CACHED ONLY' }), 3500);
-        img.onload = () => { clearTimeout(t); res({ ok: true, text: 'SAT · VECTOR · TERRAIN' }); };
-        img.onerror = () => { clearTimeout(t); res({ warn: true, text: 'TILE SERVER UNREACHABLE' }); };
-        img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
-      }) },
-    { id: 'prof', label: 'MISSION PROFILES', subtitle: 'Loading mission profiles', min: 200,
-      run: async () => { let n = 0; try { n = JSON.parse(localStorage.ulProfiles || '[]').length; } catch (e) {} return { ok: true, text: n + ' PROFILE' + (n === 1 ? '' : 'S') + ' LOADED' }; } }
-  ];
+  const bootTasks = UL.boot.tasks();
   async function startup() {
     buildSettings();
-    if (/noboot/.test(location.search)) { $('boot').remove(); UL.Plan.show(); return; }
-    await UL.boot.run({ tasks: bootTasks });
+    if (/noboot/.test(location.search) || UL.boot.seen()) { const b = $('boot'); if (b) b.remove(); UL.Plan.show(); return; }   // loading screen already shown on the start page
+    await UL.boot.run({ tasks: bootTasks, subtitle: 'ESCORT CONSOLE · LOADING' });
     UL.Plan.show();
   }
 

@@ -3,7 +3,9 @@
 <title>ULTRALINK</title><link rel="stylesheet" href="ul.css"><link rel="icon" href="icon.svg"><link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#05080a"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ULTRALINK"><link rel="apple-touch-icon" href="icon-180.png">
 </head><body class="scan">
-<script src="ul-settings.js"></script><script>try{new UL.Settings().apply()}catch(e){}</script>
+<script src="ul.js"></script><script src="ul-settings.js"></script><script>try{new UL.Settings().apply()}catch(e){}</script>
+<div id="boot" style="position:fixed;inset:0;z-index:10000;background:#020608"></div>
+<script>try{if(sessionStorage.ulBooted==='1'||/noboot/.test(location.search))document.getElementById('boot').remove()}catch(e){}</script>
 <div class="center">
   <div style="text-align:center">
     <div class="brandicon" style="width:64px;height:64px;margin:0 auto 16px;display:block"></div>
@@ -24,7 +26,10 @@
   <div class="muted" id="inst" style="font-size:10px;max-width:460px;text-align:center;line-height:1.7"></div>
   <div class="sub" id="net">LINK: <span class="muted">checking…</span></div>
 </div>
+<script src="ul-boot.js"></script>
 <script>
+/* loading screen first — before the mode select (once per session) */
+if(document.getElementById('boot'))UL.boot.run({tasks:UL.boot.tasks(),subtitle:'SYSTEM CHECK · LOADING'});
 (function(){const ua=navigator.userAgent,ios=/iP(hone|ad|od)/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1),standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
  const t=standalone?'':ios?'Install: Safari → Share → <b>Add to Home Screen</b>':/Android/.test(ua)?'Install: Chrome menu ⋮ → <b>Add to Home screen</b>':'Install: Chrome / Edge address bar → <b>Install app</b> icon';
  if(!window.isSecureContext&&location.hostname!=='localhost')document.getElementById('inst').innerHTML='<span style="color:var(--warn)">Open this page over HTTPS — GPS and the microphone are blocked on plain http.</span>';else document.getElementById('inst').innerHTML=t;})();
