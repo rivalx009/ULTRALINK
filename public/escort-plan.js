@@ -100,13 +100,14 @@
     setHomeLayer(cfg.v.mapLayer || 'SAT');
     hGrid = UL.makeGrid().addTo(hmap); hGrid.setOpacity(0);
     hmap.setView(EARTH_C, earthZoom(), { animate: false });
-    $('hLayers').innerHTML = '<div style="margin-bottom:5px">MAP LAYER</div>' + Object.keys(UL.LAYERS).map(k => `<button data-l="${k}">${k}</button>`).join('') +
+    $('hLayers').innerHTML = '<div class="wh">MAP LAYER</div>' + Object.keys(UL.LAYERS).map(k => `<button data-l="${k}">${k}</button>`).join('') +
       '<div style="margin:6px 0 4px">VIEW</div><button id="hEarth">◍ EARTH VIEW</button><button id="hFitRoute">⤢ FIT ROUTE</button>';
     $('hLayers').querySelectorAll('[data-l]').forEach(b => b.onclick = () => setHomeLayer(b.dataset.l));
     $('hEarth').onclick = () => toEarth();
     $('hFitRoute').onclick = () => fitRoute();
     UL.mapOverlays(hmap, $('hLayers'));
     hmap.on('zoom', glow); glow();
+    UL.widget($('hLayers'), { key: 'planlayers', head: '.wh' });
     hmap.on('zoomend', () => hGrid.setOpacity(cfg.v.gridOverlay && hmap.getZoom() >= 9 ? 1 : 0));
     hmap.on('mousemove', onMapMove);
     hmap.on('mouseout', () => setGhost(null));
@@ -581,9 +582,7 @@
   $('dDel').onclick = () => cur && deleteProfile(cur.id);
   $('dExport').onclick = () => {
     if (!cur) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(cur, null, 1)], { type: 'application/json' }));
-    a.download = 'ultralink-' + (cur.name || 'mission').replace(/[^A-Z0-9]+/gi, '_') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    UL.saveFile('ultralink-' + (cur.name || 'mission').replace(/[^A-Z0-9]+/gi, '_') + '.json', JSON.stringify(cur, null, 1), 'application/json');
   };
   $('pImport').onclick = () => $('impFile').click();
   $('impFile').onchange = async e => {
@@ -632,6 +631,8 @@
     show() {
       $('home').style.display = 'block';
       if (!hmap) initHomeMap(); else setTimeout(() => hmap.invalidateSize(), 50);
+      UL.widget($('profPanel'), { key: 'profiles', head: '.hh' });
+      UL.widget($('detPanel'), { key: 'details', head: '.hh', before: '#dClose' });
       renderList();
       fetch('health').then(() => { $('hRelay').textContent = 'RELAY ONLINE'; $('hRelay').className = 'tag ok'; }).catch(() => { $('hRelay').textContent = 'RELAY OFFLINE'; $('hRelay').className = 'tag bad'; });
       if (!localStorage.ulPlanHelp) { localStorage.ulPlanHelp = 1; setTimeout(() => $('hHelp').click(), 700); }

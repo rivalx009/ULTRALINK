@@ -1,4 +1,36 @@
 /* ULTRALINK shared core — link, geo math, GPX, telemetry, WebRTC PTT net */
+/* Desktop app: positions come from the Windows Location service through the app (UltraApp.nativeGeo).
+ * navigator.geolocation is wrapped so every page keeps using the normal browser API; if the native
+ * provider fails the browser's own geolocation is used instead. */
+(function () {
+  const A = typeof window !== 'undefined' && window.UltraApp;
+  if (!A || typeof A.nativeGeo !== 'function' || !navigator.geolocation) return;
+  const orig = navigator.geolocation, ow = orig.watchPosition.bind(orig), og = orig.getCurrentPosition.bind(orig), oc = orig.clearWatch.bind(orig);
+  const W = new Map(); let seq = 1, last = null, failed = false, started = false; const once = [];
+  const mk = p => ({ coords: { latitude: p.lat, longitude: p.lon, accuracy: p.acc || 30, altitude: p.alt == null ? null : p.alt, altitudeAccuracy: null, heading: p.hdg == null || p.hdg < 0 ? null : p.hdg, speed: p.spd == null || p.spd < 0 ? null : p.spd }, timestamp: p.ts || Date.now() });
+  const fallback = () => { if (failed) return; failed = true; W.forEach(w => { if (w.oid == null) w.oid = ow(w.ok, w.err, w.opt); }); once.splice(0).forEach(o => og(o.ok, o.err, o.opt)); };
+  const start = () => {
+    if (started) return; started = true;
+    try {
+      A.nativeGeo(p => { if (!p || p.lat == null) return; last = mk(p); W.forEach(w => { if (w.oid == null) w.ok(last); }); once.splice(0).forEach(o => { clearTimeout(o.t); o.ok(last); }); },
+        e => { console.warn('native GPS unavailable, using browser geolocation:', e); fallback(); });
+    } catch (e) { fallback(); }
+  };
+  const shim = {
+    watchPosition(ok, err, opt) { const id = seq++, w = { ok, err: err || (() => {}), opt }; W.set(id, w); start(); if (failed) w.oid = ow(ok, err, opt); else if (last) setTimeout(() => ok(last), 0); return id; },
+    clearWatch(id) { const w = W.get(id); if (w && w.oid != null) oc(w.oid); W.delete(id); },
+    getCurrentPosition(ok, err, opt) {
+      start(); opt = opt || {};
+      if (failed) return og(ok, err, opt);
+      if (last && opt.maximumAge !== 0 && Date.now() - last.timestamp < (opt.maximumAge || 0)) return setTimeout(() => ok(last), 0);
+      if (opt.maximumAge === 0 && A.nativeGeoFresh) { try { A.nativeGeoFresh(); } catch (e) {} }
+      const o = { ok, err: err || (() => {}), opt };
+      o.t = setTimeout(() => { const i = once.indexOf(o); if (i >= 0) once.splice(i, 1); last ? ok(last) : og(ok, err, opt); }, Math.min(opt.timeout || 10000, 12000));
+      once.push(o);
+    }
+  };
+  try { Object.defineProperty(navigator, 'geolocation', { value: shim, configurable: true }); } catch (e) {}
+})();
 (function (global) {
   'use strict';
 

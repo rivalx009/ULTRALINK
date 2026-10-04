@@ -1,0 +1,32 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.ultralink.app'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.ultralink.app'
+        minSdk 24
+        targetSdk 34
+        versionCode 15
+        versionName '1.5.0'
+    }
+    /* release signing from environment / GitHub secrets: ULTRALINK_KEYSTORE (path), ULTRALINK_KEYSTORE_PASSWORD, ULTRALINK_KEY_ALIAS, ULTRALINK_KEY_PASSWORD */
+    signingConfigs {
+        release {
+            def ks = System.getenv('ULTRALINK_KEYSTORE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('ULTRALINK_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ULTRALINK_KEY_ALIAS')
+                keyPassword System.getenv('ULTRALINK_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv('ULTRALINK_KEYSTORE') ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_11; targetCompatibility JavaVersion.VERSION_11 }
+}

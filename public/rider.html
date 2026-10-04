@@ -25,11 +25,19 @@
   #tapAudio{position:fixed;left:50%;bottom:170px;transform:translateX(-50%);z-index:60;display:none;padding:12px 18px;background:var(--warn);color:#000;border:0;font-weight:700;letter-spacing:.16em;font-size:11px}
   #tapAudio.show{display:block}
   .keyhint{display:none}
+  .rwh{display:flex;align-items:center;padding:5px 12px;font-size:8px;letter-spacing:.28em;color:var(--dim);border-top:1px solid var(--line)}
+  .rwh .wmin-btn{margin-left:auto}
+  .rw.wmin .rwh{border-bottom:1px solid var(--line)}
+  #login{overflow:auto;justify-content:flex-start;padding-top:max(6vh,env(safe-area-inset-top))}
+  @media (max-height:640px){#ptt{height:104px}}
+  .hero .big{font-size:clamp(48px,16vw,72px)}
+  .cells .v{font-size:clamp(18px,5.5vw,24px)}
+  #rSet{padding:8px 12px!important;font-size:13px!important}
   @media (hover:hover) and (pointer:fine){ .keyhint{display:inline} }
 </style></head><body class="scan">
 
 <div class="center" id="login">
-  <div style="text-align:center"><div class="logo" style="font-size:22px">ULTRALINK</div><div class="sub" style="margin-top:8px">RIDER MODE</div></div>
+  <div style="text-align:center"><div class="brandicon" style="width:52px;height:52px;margin:0 auto 14px;display:block"></div><div class="logo" style="font-size:22px"><span class="wm" role="img" aria-label="ULTRALINK"></span></div><div class="sub" style="margin-top:8px">RIDER MODE</div></div>
   <div class="panel corner" style="width:min(420px,94vw);padding:20px">
     <label>Mission code</label>
     <input id="code" maxlength="8" placeholder="XXXXXX" style="width:100%;text-align:center;font-size:26px;letter-spacing:.4em;text-transform:uppercase">
@@ -48,7 +56,8 @@
     <div id="err" style="color:var(--bad);font-size:11px;margin-top:10px"></div>
   </div>
   <a href="ultralink.apk" id="getApp" download style="display:none;color:var(--warn);font-size:11px;letter-spacing:.14em;text-align:center;text-decoration:none">⤓ GET THE ANDROID APP<br><span class="muted" style="font-size:9px">keeps tracking &amp; radio on with the screen off</span></a>
-  <div class="sub"><a href="index.html" style="color:var(--dim)">← MODE SELECT</a></div>
+  <a href="escort.html" id="toEscort" style="text-decoration:none;width:min(420px,94vw)"><button class="ghost" style="width:100%;padding:13px;font-size:11px">▣ SWITCH TO ESCORT MODE</button></a>
+  <div class="sub"><a href="index.html" id="modeSel" style="color:var(--dim)">← MODE SELECT</a></div>
 </div>
 
 <div id="app">
@@ -61,6 +70,7 @@
     <div class="sub">GROUND SPEED</div>
     <div class="big" id="spd">0.0<span style="font-size:15px;letter-spacing:.2em"> KM/H</span></div>
   </div>
+  <div class="rw" id="wStats"><div class="rwh">LIVE TELEMETRY</div>
   <div class="cells">
     <div><div class="k">DIST COVERED</div><div class="v" id="cov">0.00</div></div>
     <div><div class="k">REMAINING</div><div class="v" id="rem">--</div></div>
@@ -69,7 +79,8 @@
     <div><div class="k">ELEV M</div><div class="v" id="ele">--</div></div>
     <div><div class="k">HEART BPM</div><div class="v" id="hr">--</div></div>
   </div>
-  <canvas id="prof"></canvas>
+  </div>
+  <div class="rw" id="wProf"><div class="rwh">ELEVATION PROFILE</div><canvas id="prof"></canvas></div>
   <div class="chips">
     <span class="tag" id="acc">GPS ±--</span><span class="tag" id="rtt">RTT --</span>
     <span class="tag" id="off">ON ROUTE</span><span class="tag" id="dev">NO SENSOR</span>

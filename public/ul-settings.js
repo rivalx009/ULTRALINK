@@ -7,7 +7,7 @@
     warn: '#ffb000',
     bad: '#ff4d6d',
     good: '#7cff5a',
-    theme: 'void',                 // void | slate | olive | arctic | ember
+    theme: 'void',                 // void (DARK) | arctic (light grey)
     panelOpacity: 82,
     scanlines: true,
     cornerAccents: true,
@@ -39,18 +39,20 @@
       layer: 'KeyL',
       master: 'KeyM',              // acknowledge the off-route master alert
       returnLead: 'KeyR',          // fly back to the lead rider
+      refreshGps: 'KeyG',          // refresh the live GPS feed of every unit
       units: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9']
     },
     colorOverrides: {}             // callsign -> hex
   };
 
+  /* Two appearances only:
+   *  DARK   ('void')   — the original ULTRALINK look
+   *  ARCTIC ('arctic') — dark-grey text on light-grey slides / widgets            */
   const THEMES = {
-    void:   { bg: '#05080a', bg2: '#0a1014', line: '#14323b', line2: '#1d4d59', fg: '#c9f7ff', dim: '#5d8794' },
-    slate:  { bg: '#0b0e12', bg2: '#12171d', line: '#243039', line2: '#35485a', fg: '#dde7f0', dim: '#7b8b9c' },
-    olive:  { bg: '#080a06', bg2: '#101408', line: '#2a3315', line2: '#41501f', fg: '#e2f2c4', dim: '#8a9a6a' },
-    arctic: { bg: '#f2f6f8', bg2: '#e4ebef', line: '#b9c7cf', line2: '#8fa4b0', fg: '#12242c', dim: '#5c7481' },
-    ember:  { bg: '#0b0605', bg2: '#150b08', line: '#3a1c12', line2: '#59291a', fg: '#ffe6d4', dim: '#a87c68' }
+    void:   { label: 'DARK',   bg: '#05080a', bg2: '#0a1014', line: '#14323b', line2: '#1d4d59', fg: '#c9f7ff', dim: '#5d8794' },
+    arctic: { label: 'ARCTIC', bg: '#e9ebed', bg2: '#d9dde0', line: '#bfc5ca', line2: '#9aa2a9', fg: '#33393e', dim: '#646c73', accent: '#46525c', warn: '#b26b00', bad: '#c62f4b', good: '#2e8b3e' }
   };
+  const LEGACY_THEME = { slate: 'void', olive: 'void', ember: 'void', dark: 'void' };
 
   const KEY_LABEL = c => c === 'Space' ? 'SPACE' : String(c || '').replace(/^Key|^Digit/, '').toUpperCase() || '—';
 
@@ -63,6 +65,7 @@
       this.v.keys = Object.assign({}, DEFAULTS.keys, saved.keys || {});
       this.v.keys.units = (saved.keys && saved.keys.units) || DEFAULTS.keys.units.slice();
       this.v.colorOverrides = Object.assign({}, saved.colorOverrides || {});
+      if (!THEMES[this.v.theme]) this.v.theme = LEGACY_THEME[this.v.theme] || 'void';   // old themes (slate / olive / ember) fall back to DARK
       return this.v;
     }
     save() { localStorage.ulUi = JSON.stringify(this.v); this.apply(); this.onchange && this.onchange(this.v); }
@@ -76,9 +79,12 @@
     }
     apply() {
       const v = this.v, t = THEMES[v.theme] || THEMES.void, r = document.documentElement.style;
-      r.setProperty('--accent', v.accent); r.setProperty('--warn', v.warn);
-      r.setProperty('--bad', v.bad); r.setProperty('--good', v.good);
-      Object.entries(t).forEach(([k, val]) => r.setProperty('--' + k, val));
+      /* ARCTIC uses a dark-grey accent unless the user picked their own accent colour */
+      const acc = (t.accent && v.accent === DEFAULTS.accent) ? t.accent : v.accent;
+      const pick = k => (t[k] && v[k] === DEFAULTS[k]) ? t[k] : v[k];
+      r.setProperty('--accent', acc); r.setProperty('--warn', pick('warn'));
+      r.setProperty('--bad', pick('bad')); r.setProperty('--good', pick('good'));
+      ['bg', 'bg2', 'line', 'line2', 'fg', 'dim'].forEach(k => r.setProperty('--' + k, t[k]));
       const rgb = hexToRgb(t.bg2);
       r.setProperty('--panel', `rgba(${rgb.r},${rgb.g},${rgb.b},${v.panelOpacity / 100})`);
       r.setProperty('--label-scale', v.labelScale / 100);
@@ -87,6 +93,8 @@
       document.body.classList.toggle('scan', !!v.scanlines);
       document.body.classList.toggle('nocorners', !v.cornerAccents);
       document.body.classList.toggle('light', v.theme === 'arctic');
+      document.documentElement.classList.toggle('light', v.theme === 'arctic');
+      const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = t.bg;
       if (global.UL && global.UL.fx) { global.UL.fx.state.enabled = !!v.sound; global.UL.fx.state.ui = !!v.uiSounds; global.UL.fx.setVolume(v.volume / 100); }
     }
     /* unit conversion helpers honouring the units preference */
@@ -114,6 +122,7 @@
   global.UL = global.UL || {};
   global.UL.Settings = Settings;
   global.UL.THEMES = THEMES;
+  global.UL.themeOptions = cur => Object.keys(THEMES).map(k => `<option value="${k}" ${cur === k ? 'selected' : ''}>${THEMES[k].label}</option>`).join('');
   global.UL.KEY_LABEL = KEY_LABEL;
   global.UL.UI_DEFAULTS = DEFAULTS;
 })(window);

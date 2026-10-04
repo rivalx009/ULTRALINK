@@ -57,3 +57,121 @@ dialog[open]{animation:dlgin .18s ease-out}
 @keyframes dlgin{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
 .hint{font-size:10px;color:var(--dim);letter-spacing:.06em;line-height:1.6}
 [title]{cursor:inherit}
+
+/* =====================================================================
+   v1.5 — brand wordmark, widget minimise, power widget, ARCTIC theme
+   ===================================================================== */
+/* ULTRALINK wordmark (brand font) — inherits the text colour, scales with font-size */
+.wm{display:inline-block;height:1em;aspect-ratio:207.6/23.2;background:currentColor;-webkit-mask:url(wordmark.svg) no-repeat center/contain;mask:url(wordmark.svg) no-repeat center/contain;vertical-align:-.08em;color:inherit}
+.wm>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.logo .wm{height:1.05em}
+.brandicon{display:inline-block;width:1.4em;height:1.4em;background:url(icon.svg) center/contain no-repeat;vertical-align:-.35em;border-radius:22%}
+
+/* minimise / maximise button on every widget */
+.wmin-btn{flex:0 0 auto;width:20px;height:18px;min-width:20px;padding:0!important;margin-left:6px;font:600 13px/16px var(--mono)!important;letter-spacing:0!important;text-align:center;background:transparent;border:1px solid var(--line2);color:var(--dim);border-radius:2px;cursor:pointer}
+.wmin-btn:hover{color:var(--accent);border-color:var(--accent);box-shadow:none}
+.wgt.wmin>:not(.whd){display:none!important}
+.wgt.wmin .whd{border-bottom:0!important;margin-bottom:0!important}
+@media (pointer:coarse){.wmin-btn{width:30px;height:28px;min-width:30px;font-size:16px!important;line-height:26px!important}}
+
+/* ---------------- LEAD POWER widget ---------------- */
+.pwr{display:flex;flex-direction:column;border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,26,32,.92),rgba(6,14,18,.92));font-size:10px;letter-spacing:.08em}
+.pwr .pw-h{display:flex;align-items:center;gap:7px;padding:7px 10px;border-bottom:1px solid var(--line);font-size:10px;letter-spacing:.22em;color:var(--dim)}
+.pwr .pw-h b{color:var(--accent);font-weight:600}
+.pwr .pw-ico{color:var(--warn)}
+.pwr .pw-who{color:var(--warn);letter-spacing:.14em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.pwr .pw-b{padding:8px 10px 10px;overflow:auto;min-height:0}
+.pwr .pw-none{display:none;padding:6px 0}
+.pwr.nolead .pw-none{display:block}
+.pwr.nolead .pw-main,.pwr.nolead .pw-stats{opacity:.35}
+.pwr .pw-main{display:flex;align-items:center;gap:10px}
+.pwr .pw-big b{font-size:40px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;transition:color .3s}
+.pwr .pw-big small{display:block;font-size:8px;letter-spacing:.2em;color:var(--dim);margin-top:2px}
+.pwr .pw-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.pwr .pw-zone{display:flex;align-items:center;gap:6px;border:1px solid var(--line2);padding:4px 6px;font-size:9px;letter-spacing:.12em;white-space:nowrap;overflow:hidden}
+.pwr .pw-zone i{width:10px;height:10px;flex:0 0 10px;display:block}
+.pwr .pw-kv{display:flex;gap:10px;font-size:9px;color:var(--dim)}
+.pwr .pw-kv b{color:var(--fg);font-size:12px;font-variant-numeric:tabular-nums}
+.pwr .pw-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);margin-top:8px}
+.pwr .pw-stats>div{background:#08181e;padding:3px 4px;text-align:center}
+.pwr .pw-stats .k{font-size:7px;letter-spacing:.14em;color:var(--dim)}
+.pwr .pw-stats .v{font-size:12px;font-variant-numeric:tabular-nums}
+.pwr .pw-cap{display:flex;gap:6px;font-size:8px;letter-spacing:.2em;color:var(--dim);margin:10px 0 4px}
+.pwr .pw-meter{color:var(--good)}
+.pwr .pw-live-cv{width:100%;height:76px;display:block;background:rgba(0,0,0,.18);border:1px solid var(--line)}
+.pwr .pw-hist{display:flex;flex-direction:column;gap:3px}
+.pwr .pw-hist.off{opacity:.4}
+.pwr .pw-zr{display:grid;grid-template-columns:8px minmax(0,118px) 1fr 38px 28px;gap:6px;align-items:center;font-size:8px;letter-spacing:.08em;font-variant-numeric:tabular-nums}
+.pwr .pw-zr i{width:8px;height:8px;display:block}
+.pwr .pw-zn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+.pwr .pw-zr.cur .pw-zn{color:var(--fg);font-weight:600}
+.pwr .pw-zb{height:9px;background:rgba(127,127,127,.12);position:relative}
+.pwr .pw-zb em{position:absolute;left:0;top:0;bottom:0;transition:width .4s}
+.pwr .pw-zt,.pwr .pw-zp{text-align:right}
+.pwr .pw-in{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:5px;align-items:end;margin-top:10px}
+.pwr .pw-f label{font-size:7px;letter-spacing:.16em;margin-bottom:3px}
+.pwr .pw-in input{width:100%;padding:6px 6px;font-size:12px;min-width:0}
+.pwr .pw-save{padding:7px 10px;font-size:10px}
+.pwr .pw-opts{display:flex;align-items:center;gap:6px;margin-top:6px}
+.pwr .pw-chk{display:flex;align-items:center;gap:6px;margin:0;font-size:8px;letter-spacing:.16em;cursor:pointer}
+.pwr .pw-reset{padding:3px 8px;font-size:8px}
+.pwr .pw-src{margin-top:6px;font-size:8px;line-height:1.6}
+.pwr .pw-src b{color:var(--fg);font-weight:600}
+
+/* ---------------- ARCTIC: dark-grey text, light-grey slides & widgets ---------------- */
+html.light,body.light{background-color:var(--bg)}
+body.light{background-image:linear-gradient(rgba(60,70,80,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(60,70,80,.05) 1px,transparent 1px)}
+body.light.scan:after{opacity:.12}
+body.light button,body.light input,body.light select,body.light textarea{background:#eef0f1;color:var(--fg);border-color:var(--line2)}
+body.light button:hover{background:#e2e5e7;border-color:var(--accent);box-shadow:0 0 0 1px rgba(70,82,92,.15)}
+body.light button.primary{background:linear-gradient(180deg,#5b6770,#46525c);border-color:#3c464e;color:#f4f5f6}
+body.light button.primary:hover{background:linear-gradient(180deg,#66727b,#4f5b65)}
+body.light button.ghost{background:transparent}
+body.light button.danger{color:var(--bad);border-color:var(--bad)}
+body.light input:focus,body.light select:focus{box-shadow:0 0 0 2px rgba(70,82,92,.18)}
+body.light ::-webkit-scrollbar-track{background:#e3e6e8}body.light ::-webkit-scrollbar-thumb{background:#aab1b7}
+body.light .logo,body.light .big{text-shadow:none}
+body.light .toast{background:rgba(236,238,240,.97);color:var(--fg);box-shadow:0 6px 20px rgba(0,0,0,.15)}
+body.light dialog{background:var(--bg2);color:var(--fg)}
+body.light dialog::backdrop{background:rgba(60,66,72,.45)}
+body.light .tag.ok{border-color:#86b991}body.light .tag.bad{border-color:#e0a1ad}
+body.light .dot{box-shadow:none}
+/* loading screen keeps its layout + animation, recoloured */
+body.light #boot{background:radial-gradient(ellipse at 50% 40%,#f2f4f5 0%,#d7dbde 75%)!important}
+body.light #boot .bl{text-shadow:none!important}
+body.light #boot .pb{background:rgba(70,82,92,.15)!important}
+body.light #boot .pb i{box-shadow:none!important}
+body.light #boot li{border-bottom-color:rgba(120,130,138,.35)!important}
+/* panels, widgets, cards */
+body.light .panel,body.light .hudbox,body.light .hpanel,body.light #riderPop,body.light .seccard{background:rgba(217,221,224,.95)!important;border-color:var(--line2)!important;box-shadow:0 6px 24px rgba(40,50,60,.14)}
+body.light .pitem,body.light .ucard,body.light .pwr{background:linear-gradient(180deg,#e1e4e7,#d5d9dc)!important;border-color:var(--line)}
+body.light .pitem.sel,body.light .ucard.sel{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+body.light .ucard.leadcard{border-color:var(--warn)}
+body.light .kv>div,body.light .ustats div,body.light .pgrid>div,body.light .advice,body.light .seccard .sc-g>div,body.light .pwr .pw-stats>div,body.light .grid>div{background:#e8eaec!important}
+body.light .autobox,body.light #setupProf{background:#e8eaec!important}
+body.light .keycap{background:#eef0f1}
+body.light .gauge .tr{stroke:#c3c9ce}
+body.light .gauge .nd{fill:#46525c}
+body.light .prog{background:#c9ced2}
+body.light .prog em{background:#33393e;box-shadow:none}
+body.light .pwr .pw-live-cv{background:rgba(255,255,255,.35)}
+body.light #top{background:#dfe2e5!important}
+body.light #clockbar{background:#e4e7e9!important}
+body.light #left,body.light #bottom{background:#e1e4e7!important}
+body.light #map,body.light #home,body.light .leaflet-container{background:#cfd4d8!important}
+body.light #hTop{background:linear-gradient(180deg,rgba(233,235,237,.95),rgba(233,235,237,0))!important}
+body.light #gtip{background:rgba(240,242,243,.95)!important;color:var(--fg)}
+body.light #btnReturn{background:rgba(233,235,237,.96)!important;box-shadow:0 4px 14px rgba(0,0,0,.15)!important}
+body.light #pttBtn{background:radial-gradient(circle,#f1f3f4,#d3d8dc)!important;box-shadow:0 4px 14px rgba(0,0,0,.18)!important}
+body.light #pttBtn.on{background:radial-gradient(circle,#d8324f,#8e1229)!important;color:#fff}
+body.light .ulpop .leaflet-popup-content-wrapper,body.light .ulpop .leaflet-popup-tip{background:rgba(236,238,240,.98)!important;color:var(--fg)}
+body.light .leaflet-control-zoom a{background:#eef0f1;color:var(--fg);border-color:var(--line2)}
+body.light #earthGlow{opacity:.35}
+body.light .sechead,body.light .sech{color:var(--dim)}
+/* rider screen */
+body.light #ptt{background:radial-gradient(circle at 50% 35%,#f1f3f4,#d3d8dc)!important;color:var(--fg)}
+body.light #ptt.live{background:radial-gradient(circle at 50% 35%,#d8324f,#8e1229)!important;color:#fff}
+body.light .cells>div{background:#e1e4e7}
+body.light .rx{background:#eef0f1}
+/* unit colours (bright on purpose for the dark map) get a thin outline on light grey so callsigns stay readable */
+body.light .ucard .cs,body.light #riderPop .ph b,body.light #selName,body.light .pwr .pw-who,body.light .ltag{text-shadow:0 0 1px rgba(0,0,0,.55),0 0 1px rgba(0,0,0,.35)}

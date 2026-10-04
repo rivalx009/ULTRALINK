@@ -92,6 +92,7 @@
     const nm = host.querySelector('.sc-name'); if (nm) nm.oninput = () => o.onName && o.onName(nm.value.toUpperCase());
     const nt = host.querySelector('.sc-notes'); if (nt) nt.oninput = () => o.onNotes && o.onNotes(nt.value);
     host.classList.add('in');
+    if (UL.widget) UL.widget(host, { key: 'seccard', head: '.sc-h', before: '.sc-x', onToggle: min => { if (!min) requestAnimationFrame(draw); } });
     requestAnimationFrame(draw);
     return { redraw: draw };
   };

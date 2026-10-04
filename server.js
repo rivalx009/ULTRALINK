@@ -33,13 +33,23 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
-  '.webmanifest': 'application/manifest+json', '.gpx': 'application/gpx+xml', '.apk': 'application/vnd.android.package-archive'
+  '.webmanifest': 'application/manifest+json', '.gpx': 'application/gpx+xml', '.apk': 'application/vnd.android.package-archive', '.exe': 'application/vnd.microsoft.portable-executable'
 };
 
 function serve(req, res) {
   let url = decodeURIComponent((req.url || '/').split('?')[0]);
   if (url === '/') url = '/index.html';
   if (url === '/health') { res.writeHead(200); return res.end('ok'); }
+  if (url === '/apps.json' || url === '/ultralink-desktop-setup.exe') {   // Windows installer: in public/ or hosted elsewhere (GitHub Release)
+    const local = fs.existsSync(path.join(PUBLIC, 'ultralink-desktop-setup.exe'));
+    let ext = process.env.DESKTOP_URL || '';
+    if (!ext) try { ext = fs.readFileSync(path.join(__dirname, 'desktop-url.txt'), 'utf8').split(/\r?\n/).map(x => x.trim()).find(x => /^https?:\/\//.test(x) && !/YOUR-/.test(x)) || ''; } catch (e) {}
+    if (url === '/apps.json') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(JSON.stringify({ desktop: local ? '/ultralink-desktop-setup.exe' : (ext || null), android: '/ultralink.apk' }));
+    }
+    if (!local && ext) { res.writeHead(302, { Location: ext }); return res.end(); }
+  }
   if (url === '/ice') {           // WebRTC ICE servers; add a TURN server with env TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL
     const ice = [{ urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] }];
     if (process.env.TURN_URLS) ice.push({ urls: process.env.TURN_URLS.split(',').map(x => x.trim()).filter(Boolean), username: process.env.TURN_USERNAME || '', credential: process.env.TURN_CREDENTIAL || '' });
@@ -48,14 +58,17 @@ function serve(req, res) {
   }
   const file = path.join(PUBLIC, path.normalize(url).replace(/^(\.\.[\/\\])+/, ''));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end('forbidden'); }
-  fs.readFile(file, (err, buf) => {
-    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('404'); }
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('404'); }
+    const ext = path.extname(file), dl = ext === '.apk' || ext === '.exe';
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Content-Length': st.size,
+      'Cache-Control': dl ? 'public, max-age=3600' : 'no-cache',
       'Service-Worker-Allowed': '/'
     });
-    res.end(buf);
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);   // streamed: big app downloads don't sit in RAM
   });
 }
 
@@ -243,8 +256,8 @@ function handle(c, m) {
     }
     case 'telemetry': {
       if (!c.mission) return;
-      c.telemetry = m.data;
-      broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data }, c);
+      c.telemetry = m.data; c.telAt = Date.now();
+      broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data, fresh: m.fresh || undefined }, c);
       break;
     }
     case 'signal': {           // WebRTC offer/answer/ice — targeted
@@ -263,6 +276,14 @@ function handle(c, m) {
     case 'text': {
       if (!c.mission) return;
       broadcast(c.mission, { t: 'text', from: c.id, callsign: c.callsign, body: m.body, ts: Date.now() }, null);
+      break;
+    }
+    case 'gps.refresh': {      // escort asks every unit for a fresh GPS fix; answer at once with the last known positions
+      if (!c.mission) return;
+      const rid = String(m.rid || Date.now());
+      broadcast(c.mission, { t: 'gps.refresh', from: c.id, callsign: c.callsign, rid, ts: Date.now() }, c);
+      c.send({ t: 'gps.snapshot', rid, ts: Date.now(),
+        units: peers(c.mission, c).map(p => ({ id: p.id, role: p.role, callsign: p.callsign, color: p.color, data: p.telemetry, at: p.telAt || null })) });
       break;
     }
     case 'ptt.relay': c.relay = Array.isArray(m.relay) ? m.relay : null; break;

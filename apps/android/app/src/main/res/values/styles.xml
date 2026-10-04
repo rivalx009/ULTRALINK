@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ul_bg">#05080A</color>
+    <color name="ul_icon_bg">#808080</color>
+    <style name="UltraTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ul_bg</item>
+        <item name="android:statusBarColor">@color/ul_bg</item>
+        <item name="android:navigationBarColor">@color/ul_bg</item>
+        <item name="android:colorAccent">#00E5FF</item>
+    </style>
+</resources>

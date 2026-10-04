@@ -11,6 +11,8 @@
   let routeGroup = null, selfMarker = null, sectors = [], sectorTimer = null;
   let opsStarted = false, joinInfo = null, popOff = false, lastCdSec = null, ended = false;
   let leadName = null, launchLead = null, restoring = 0, opsSec = null, hiLayer = null, pttTo = 'all';
+  let power = null, geoWatch = null, gpsRef = null, freshRid = null, mTab = 'map';
+  const isPhone = () => innerWidth <= 760;
   const OFF = new Map();               // rider id -> off-route alert state {n, back, on, ack, dist, since, beep}
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
@@ -118,6 +120,7 @@
     $('shell').style.display = 'flex';
     $('tMis').textContent = mission.name; $('tCode').textContent = 'CODE ' + mission.code;
     initMap(); initVoice(); startGeo(); layoutHandles(); renderSel(); bindMissionControls(); initGraph(); initOpsExtras();
+    initPower(); initWidgets(); initMobile();
     if (leadName) log('SYS', '★ LEAD RIDER: ' + leadName, '#ffb000');
     log('SYS', 'MISSION ' + mission.code + ' ACTIVE — riders can join with the code', '#7cff5a');
     cfg.onchange = () => applyLiveSettings();
@@ -149,6 +152,8 @@
     u.data = m.data; u.ts = Date.now(); u.callsign = m.callsign; u.color = m.color; u.role = m.role;
     units.set(m.id, u);
     if (u.role === 'rider' && sectorTimer) sectorTimer.feed(u.callsign, m.data.covered, m.data.ts || Date.now());
+    if (u.role === 'rider' && power) power.feed(u);
+    if (m.fresh && gpsRef && m.fresh === gpsRef.rid) gpsRef.got.add(m.id);
     placeUnit(u); checkOff(u); renderUnits(); if (sel === m.id) renderSel();
   });
   let rxCount = 0;
@@ -175,6 +180,7 @@
     const d = id === 'self' ? tel.state : units.get(id)?.data;
     if (d && d.lat != null) map.flyTo([d.lat, d.lon], Math.max(map.getZoom(), cfg.v.zoomFollow), { duration: .7 });
     fx.select(); renderSel(); renderUnits(); renderPop(true);
+    if (isPhone() && mTab !== 'map') setTab('map');
   }
   function removeUnit(id) { OFF.delete(id); renderOff(); const u = units.get(id); if (u && u.marker) { map.removeLayer(u.marker); u.trail && map.removeLayer(u.trail); } removeCard(id); units.delete(id); if (sel === id) { sel = 'self'; renderSel(); renderPop(true); } }
 
@@ -186,9 +192,9 @@
     window.__map = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     setLayer(cfg.v.mapLayer || 'SAT');
-    $('layers').innerHTML = '<div style="margin-bottom:5px">MAP LAYER</div>' + Object.keys(LAYERS).map(k => `<button data-l="${k}">${k}</button>`).join('');
+    $('layers').innerHTML = '<div class="wh">MAP LAYER</div>' + Object.keys(LAYERS).map(k => `<button data-l="${k}">${k}</button>`).join('');
     $('layers').querySelectorAll('button').forEach(b => b.onclick = () => setLayer(b.dataset.l));
-    $('mapopts').innerHTML = `<div style="margin-bottom:5px">OVERLAY</div>
+    $('mapopts').innerHTML = `<div class="wh">OVERLAY</div>
       <button id="oGrid" class="on">GRID</button><button id="oLbl" class="on">LABELS</button><button id="oRte" class="on">ROUTE</button><button id="oFit">FIT</button>`;
     $('oGrid').onclick = e => { e.target.classList.toggle('on'); gridLayer.setOpacity(e.target.classList.contains('on') ? 1 : 0); };
     $('oLbl').onclick = e => { e.target.classList.toggle('on'); document.body.classList.toggle('nolabels', !e.target.classList.contains('on')); };
@@ -270,7 +276,16 @@
   /* ================================================================ SELF GPS */
   function startGeo() {
     if (!navigator.geolocation) return;
-    navigator.geolocation.watchPosition(p => tel.onPosition(p), () => {}, { enableHighAccuracy: true, maximumAge: 1500, timeout: 20000 });
+    if (geoWatch != null) { try { navigator.geolocation.clearWatch(geoWatch); } catch (e) {} }
+    geoWatch = navigator.geolocation.watchPosition(p => tel.onPosition(p), () => {}, { enableHighAccuracy: true, maximumAge: 1500, timeout: 20000 });
+  }
+  /** one brand-new high-accuracy fix (no cached position) */
+  function freshFix() {
+    return new Promise(res => {
+      if (!navigator.geolocation) return res(false);
+      const t = setTimeout(() => res(false), 11000);
+      navigator.geolocation.getCurrentPosition(p => { clearTimeout(t); tel.onPosition(p); res(true); }, () => { clearTimeout(t); res(false); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+    });
   }
   let lastTx = 0;
   tel.addEventListener('update', e => {
@@ -284,7 +299,7 @@
     if (sel === 'self') renderSel();
     renderUnits();
     const now = Date.now();
-    if (now - lastTx > 1500) { lastTx = now; link.send({ t: 'telemetry', data: Object.assign({}, s, { lead: leadName }) }); }
+    if (now - lastTx > 1500 || freshRid) { lastTx = now; const msg = { t: 'telemetry', data: Object.assign({}, s, { lead: leadName }) }; if (freshRid) { msg.fresh = freshRid; freshRid = null; } link.send(msg); }
   });
   function selfUnit() { return { id: 'self', role: 'escort', callsign: myCall, color: myColor, data: tel.state, ts: Date.now() }; }
   const isLead = u => u && u.role === 'rider' && leadName && u.callsign === leadName;
@@ -401,6 +416,8 @@
     c.refs.lead = el.querySelector('.lead');
     c.refs.lead.onclick = e => { e.stopPropagation(); const u = units.get(id); if (u) setLead(u.callsign === leadName ? null : u.callsign); };
     el.querySelector('.gwrap').onclick = e => { e.stopPropagation(); c.mode = (c.mode + 1) % 3; fx.tick(); updateCard(id); };
+    const cu = id === 'self' ? null : units.get(id);
+    UL.widget(el, { key: 'card:' + (id === 'self' ? 'self' : (cu && cu.callsign) || id), head: '.uh' });
     cards.set(id, c); return c;
   }
   function removeCard(id) { const c = cards.get(id); if (c) { c.el.remove(); cards.delete(id); } }
@@ -571,6 +588,7 @@
     pop.innerHTML = h;
     const pb = pop.querySelector('.pb'); if (pb) pb.scrollTop = scroll;
     if (!pop.classList.contains('show')) { pop.classList.add('show'); fx.open(); requestAnimationFrame(() => requestAnimationFrame(() => pop.classList.add('in'))); } else pop.classList.add('in');
+    UL.widget(pop, { key: 'riderpop', head: '.ph', before: '#popX' });
     const x = pop.querySelector('#popX'); if (x) x.onclick = () => { popOff = true; renderPop(true); fx.close(); };
     const pw = pop.querySelector('#popWind'); if (pw) pw.onclick = openWindDialog;
     pop.querySelector('#popLead').onclick = () => setLead(isLead(u) ? null : u.callsign);
@@ -772,6 +790,7 @@
     if (id) { e.preventDefault(); return txStart([id], units.get(id).callsign); }
     if (e.code === K.master) { e.preventDefault(); return masterAck(); }
     if (e.code === K.returnLead) { e.preventDefault(); return returnTo(); }
+    if (e.code === K.refreshGps) { e.preventDefault(); return refreshGps(); }
     if (e.code === 'Escape' && opsSec != null) return closeOpsSector();
     if (e.code === K.follow) { follow = !follow; syncFollowBtn(); }
     else if (e.code === K.settings) { $('dlgSet').showModal(); }
@@ -820,7 +839,7 @@
   function renderSettings(tab) {
     const v = cfg.v; let h = '';
     if (tab === 'appearance') {
-      h += row('Theme', `<select data-s="theme">${Object.keys(UL.THEMES).map(t => `<option ${v.theme === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
+      h += row('Appearance <span class="muted">DARK = original · ARCTIC = dark-grey text on light-grey widgets</span>', `<select data-s="theme">${UL.themeOptions(v.theme)}</select>`);
       h += row('Accent colour', `<input type="color" data-s="accent" value="${v.accent}">`);
       h += row('Warning colour', `<input type="color" data-s="warn" value="${v.warn}">`);
       h += row('Alert colour', `<input type="color" data-s="bad" value="${v.bad}">`);
@@ -847,7 +866,7 @@
     }
     if (tab === 'keys') {
       h += `<div class="hint" style="margin-bottom:8px">Click a key, then press the key you want. Unit slots are assigned in roster order: riders first, then escorts.</div>`;
-      [['pttAll', 'PTT — all units'], ['follow', 'Toggle follow'], ['returnLead', 'Return to lead rider'], ['master', 'Master alert (acknowledge off-route)'], ['clock', 'Mission clock start/stop'], ['layer', 'Cycle map layer'], ['settings', 'Open settings']].forEach(([k, lbl]) => h += row(lbl, `<div class="keycap" data-k="${k}">${UL.KEY_LABEL(v.keys[k])}</div>`));
+      [['pttAll', 'PTT — all units'], ['follow', 'Toggle follow'], ['returnLead', 'Return to lead rider'], ['refreshGps', 'Refresh live GPS (all units)'], ['master', 'Master alert (acknowledge off-route)'], ['clock', 'Mission clock start/stop'], ['layer', 'Cycle map layer'], ['settings', 'Open settings']].forEach(([k, lbl]) => h += row(lbl, `<div class="keycap" data-k="${k}">${UL.KEY_LABEL(v.keys[k])}</div>`));
       h += `<div class="sub" style="margin:14px 0 6px">PTT UNIT SLOTS</div>`;
       v.keys.units.forEach((code, i) => { const u = sortedUnits()[i]; h += row('Slot ' + (i + 1) + (u ? ' <span style="color:' + u.color + '">· ' + esc(u.callsign) + '</span>' : ' <span class="muted">· unassigned</span>'), `<div class="keycap" data-ku="${i}">${UL.KEY_LABEL(code)}</div>`); });
     }
@@ -928,6 +947,8 @@
   function tick() {
     $('tClk').textContent = cfg.v.clock === 'zulu' ? UL.fmt.zulu() : new Date().toLocaleTimeString();
     renderClock(); renderUnits(); if (sel !== 'self') renderSel(); renderPop(); renderWindTag(); voiceTag(); updateReturnBtn();
+    if (power) power.tick();
+    if ($('mClk')) $('mClk').textContent = $('mClock').textContent;
     OFF.forEach((s, id) => { if (s.on && !s.ack && Date.now() - s.beep > 10000) { s.beep = Date.now(); fx.alert(); } });
     renderOff();
   }
@@ -981,6 +1002,7 @@
     if (leadName) UL.toast('★ ' + leadName + ' IS YOUR LEAD RIDER', 'ok');
     units.forEach(u => u.marker && u.marker.setIcon(icon(u)));
     assignKeys(); renderUnits(); renderPop(true); updateReturnBtn();
+    if (power) power.setLead(leadName);
     if (tel.state) link.send({ t: 'telemetry', data: Object.assign({}, tel.state, { lead: leadName }) });
   }
   const leadUnit = () => leadName ? [...units.values()].find(isLead) : null;
@@ -1013,6 +1035,7 @@
   function initOpsExtras() {
     $('btnMaster').onclick = e => { e.stopPropagation(); masterAck(); };
     $('btnReturn').onclick = () => returnTo();
+    document.querySelectorAll('.gpsbtn').forEach(b => b.onclick = () => refreshGps());
     const b = $('pttBtn');
     const down = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (x) {}
       const t = pttTo === 'sel' && sel !== 'self' && units.get(sel) ? [sel] : 'all';
@@ -1023,9 +1046,126 @@
     const lbl = () => { $('pttTgt').textContent = pttTo === 'all' ? 'TO: ALL' : 'TO: SELECTED'; };
     $('pttTgt').onclick = () => { pttTo = pttTo === 'all' ? 'sel' : 'all'; lbl(); fx.tick(); }; lbl();
   }
+  /* ============================================ LIVE GPS REFRESH (button ↻ GPS, key G)
+   * 1. reconnects the link if it went quiet
+   * 2. restarts this laptop's GPS watch and takes a brand-new high-accuracy fix
+   * 3. asks every rider / escort (via the relay) to take a fresh fix and send it immediately
+   * 4. the relay answers at once with the last known position of every unit -> markers redrawn
+   * 5. the map re-centres on all units; after 7 s a summary shows who answered with a fresh fix */
+  function refreshGps() {
+    if (!opsStarted || !map) return;
+    if (gpsRef && Date.now() - gpsRef.t < 2500) return;
+    const rid = Math.random().toString(36).slice(2, 10);
+    gpsRef = { rid, t: Date.now(), got: new Set(), self: null, fitted: false };
+    document.querySelectorAll('.gpsbtn').forEach(b => b.classList.add('busy'));
+    link.kick();
+    link.send({ t: 'gps.refresh', code: mission.code, rid });
+    log('GPS', 'REFRESHING LIVE GPS — ALL UNITS', cfg.v.accent);
+    UL.toast('↻ REFRESHING LIVE GPS…');
+    startGeo();
+    freshFix().then(ok => { if (!gpsRef || gpsRef.rid !== rid) return; gpsRef.self = ok; if (ok) { freshRid = rid; tel.dispatchEvent(new CustomEvent('update', { detail: tel.state })); } });
+    redrawMarkers();
+    setTimeout(() => fitAll(), 400);
+    setTimeout(() => finishGps(rid), 7000);
+  }
+  function redrawMarkers() {
+    units.forEach(u => { if (u.marker) { map.removeLayer(u.marker); u.marker = null; } if (u.trail) { const t = u.trail.getLatLngs(); map.removeLayer(u.trail); u.trail = null; u._keepTrail = t; } placeUnitFresh(u); });
+    if (selfMarker) { map.removeLayer(selfMarker); selfMarker = null; }
+    if (tel.state && tel.state.lat != null) { selfMarker = L.marker(shownLL(tel.state), { icon: icon(selfUnit(), true), zIndexOffset: 900 }).addTo(map); selfMarker.on('click', () => selectUnit('self')); }
+  }
+  function placeUnitFresh(u) {
+    placeUnit(u);
+    if (u.trail && u._keepTrail) { u.trail.setLatLngs(u._keepTrail.concat(u.trail.getLatLngs())); u._keepTrail = null; }
+  }
+  /** fit the map to every unit with a position (riders, other escorts and this escort) */
+  function fitAll() {
+    const pts = [];
+    units.forEach(u => { if (u.data && u.data.lat != null && Date.now() - (u.ts || 0) < 120000) pts.push(shownLL(u.data)); });
+    if (tel.state && tel.state.lat != null) pts.push(shownLL(tel.state));
+    if (!pts.length) return UL.toast('NO GPS POSITIONS YET', 'warn');
+    follow = false; syncFollowBtn(); flyUntil = Date.now() + 1300;
+    if (pts.length === 1) map.flyTo(pts[0], Math.max(map.getZoom(), cfg.v.zoomFollow), { duration: 0.9 });
+    else map.flyToBounds(L.latLngBounds(pts), { padding: [70, 70], maxZoom: cfg.v.zoomFollow, duration: 0.9 });
+    updateReturnBtn();
+  }
+  function finishGps(rid) {
+    if (!gpsRef || gpsRef.rid !== rid) return;
+    document.querySelectorAll('.gpsbtn').forEach(b => b.classList.remove('busy'));
+    const all = [...units.values()], fresh = all.filter(u => gpsRef.got.has(u.id)), silent = all.filter(u => !gpsRef.got.has(u.id));
+    const selfTxt = gpsRef.self === false ? ' · OWN GPS: NO FIX' : '';
+    log('GPS', `FRESH FIX FROM ${fresh.length}/${all.length} UNITS${selfTxt}`, fresh.length === all.length ? '#7cff5a' : '#ffb000');
+    if (silent.length) log('GPS', 'NO FRESH FIX: ' + silent.map(u => u.callsign).join(', ') + ' (last known position shown)', '#ffb000');
+    UL.toast(`GPS REFRESHED · ${fresh.length}/${all.length} UNITS${selfTxt}`, silent.length || gpsRef.self === false ? 'warn' : 'ok', 4200);
+    redrawMarkers(); renderUnits(); renderSel();
+  }
+  link.on('gps.snapshot', m => {
+    if (!gpsRef || m.rid !== gpsRef.rid) return;
+    (m.units || []).forEach(x => {
+      if (!x.data || x.data.lat == null) return;
+      const u = units.get(x.id) || { id: x.id, role: x.role, callsign: x.callsign, color: x.color, data: {}, ts: 0 };
+      if (!u.data || (x.data.ts || 0) >= (u.data.ts || 0)) { u.data = x.data; u.ts = x.at ? Math.max(u.ts || 0, Date.now() - Math.max(0, m.ts - x.at)) : u.ts; }
+      Object.assign(u, { role: x.role, callsign: x.callsign, color: x.color }); units.set(x.id, u);
+      placeUnit(u);
+    });
+    renderUnits(); fitAll();
+  });
+  /* another escort pressed refresh: take a fresh fix and send it straight away */
+  link.on('gps.refresh', m => {
+    startGeo();
+    freshFix().then(ok => { if (ok) { freshRid = m.rid; tel.dispatchEvent(new CustomEvent('update', { detail: tel.state })); } else link.send({ t: 'telemetry', data: Object.assign({}, tel.state, { lead: leadName }), fresh: m.rid }); });
+    log('GPS', (m.callsign || 'ESCORT') + ' REFRESHED THE GPS FEED', '#ffb000');
+  });
+
+  /* ============================================ LEAD POWER widget */
+  function initPower() {
+    power = new UL.PowerPanel($('pwrBox'), {
+      wind: d => { const w = unitWind(d); if (!w || !route || d.covered == null) return null; const r = UL.routeAt(route, d.covered); return r ? UL.headComponent(w, r.bearing) : null; }
+    });
+    power.setRoute(route); power.setLead(leadName);
+    units.forEach(u => u.role === 'rider' && power.feed(u));
+  }
+
+  /* ============================================ minimise / maximise on every widget */
+  function initWidgets() {
+    UL.widget($('layers'), { key: 'layers', head: '.wh', defMin: isPhone() });
+    UL.widget($('mapopts'), { key: 'overlay', head: '.wh', defMin: isPhone() });
+    UL.widget($('comms'), { key: 'comms', head: '.row' });
+    UL.widget($('left'), { key: 'units', head: '.hdr', onToggle: () => setTimeout(() => map && map.invalidateSize(), 60) });
+    UL.widget($('sel'), { key: 'selunit', head: '.row' });
+    UL.widget($('gbox'), { key: 'graph', head: '#gctl', onToggle: min => { $('bottom').classList.toggle('gmin', min); setTimeout(() => map && map.invalidateSize(), 60); } });
+    UL.widget($('pwrBox'), { key: 'power', head: '.pw-h', onToggle: min => { if (!min && power) power.draw(true); } });
+  }
+
+  /* ============================================ phone layout: tab bar + bottom sheets */
+  function initMobile() {
+    const tabs = $('mTabs'); if (!tabs) return;
+    tabs.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => setTab(mTab === b.dataset.tab && b.dataset.tab !== 'map' ? 'map' : b.dataset.tab));
+    $('mSheetX').onclick = () => setTab('map');
+    $('mSet').onclick = () => { $('dlgSet').showModal(); fx.open(); };
+    const more = $('mMore'), homes = { clockbar: [$('clockbar').parentNode, $('clockbar').nextSibling], comms: [$('comms').parentNode, $('comms').nextSibling] };
+    const place = () => {
+      const ph = isPhone();
+      document.body.classList.toggle('phone', ph);
+      if (ph) { if ($('clockbar').parentNode !== more) more.appendChild($('clockbar')); if ($('comms').parentNode !== more) more.appendChild($('comms')); }
+      else { Object.entries(homes).forEach(([id, [par, nx]]) => { if ($(id).parentNode !== par) par.insertBefore($(id), nx && nx.parentNode === par ? nx : null); }); if (mTab !== 'map') setTab('map'); }
+      setTimeout(() => map && map.invalidateSize(), 80);
+    };
+    addEventListener('resize', place); place(); setTab('map');
+  }
+  function setTab(t) {
+    mTab = t;
+    ['units', 'power', 'profile', 'more'].forEach(k => document.body.classList.toggle('mt-' + k, t === k));
+    document.body.classList.toggle('msheet', t !== 'map');
+    $('mTabs') && $('mTabs').querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    if ($('mSheetT')) $('mSheetT').textContent = { units: 'TRACKED UNITS', power: 'LEAD POWER', profile: 'ELEVATION & SELECTED UNIT', more: 'MISSION CONTROL & COMMS' }[t] || '';
+    if (t === 'power' && power) setTimeout(() => power.draw(true), 30);
+    setTimeout(() => map && map.invalidateSize(), 60);
+    fx.tick && fx.tick();
+  }
+
   addEventListener('resize', () => { map && map.invalidateSize(); });
   startup();
   window.__ul = { get units() { return units; }, get sectors() { return sectors; }, wind, G, get sel() { return sel; }, selectUnit,
     get voice() { return voice; }, get follow() { return follow; }, get lead() { return leadName; }, setLead, returnTo, openSector: openOpsSector, closeSector: closeOpsSector,
-    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, masterAck, get me() { return me; } };
+    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, masterAck, get me() { return me; }, refreshGps, get power() { return power; }, setTab };
 })();

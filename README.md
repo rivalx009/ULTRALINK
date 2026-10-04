@@ -1,4 +1,12 @@
-# ULTRALINK — cycling telemetry & comms  (v1.4)
+# ULTRALINK — cycling telemetry & comms  (v1.5)
+
+**New in v1.5**
+- **Apps:** Windows desktop app (`ultralink-desktop-setup.exe`) and a new Android app (`ultralink.apk`) — both offer **RIDER and ESCORT mode**, same grey chain-link icon and ULTRALINK wordmark. Download both from the start page.
+- **Phone escort layout:** bottom tabs MAP / UNITS / POWER / PROFILE / MORE, bigger touch targets.
+- **Appearance:** only **DARK** (original) and **ARCTIC** (light-grey panels, dark-grey text). Loading screen unchanged.
+- **↻ REFRESH GPS** (escort top bar, PTT dock, key **G**): asks every rider/escort device for a fresh fix, redraws all markers and zooms to fit everyone.
+- **Minimise / maximise** (– / +) button on every widget; state is remembered.
+- **Lead-rider power engine:** estimated watts from actual speed + GPX road gradient (+ air density from elevation, acceleration, optional wind). POWER widget: 3 s / 10 s / 30 s / AVG / NP / MAX / kJ, W/kg, %FTP, live 5-min zone-coloured chart and 7-zone time-in-zone histogram (Coggan zones). FTP, rider kg and bike kg are saved per rider callsign.
 
 **New in v1.4:** map SHOW toggles — ROADS (roads & infrastructure), PLACE NAMES (towns/labels) and CHECKPOINTS (show/hide checkpoint dots). On the live map they are in the OVERLAY panel (top-left); on the planning map in the layer panel (bottom-right). Riders no longer get an off-route alert; escorts still do.
 
@@ -21,11 +29,12 @@ GPS, the microphone and "install app" need **HTTPS** (the Render URL is HTTPS; `
   Both launchers ask once for the relay URL (saved in `relay.txt`; blank = run the relay on this computer). Add `reset` to change it.
 - **Phones:** open the URL, then *Add to Home Screen* (Safari → Share, or Chrome menu ⋮) for a full-screen app.
 
-## Android rider app (screen-off tracking)
-- Riders on Android tap **DOWNLOAD ANDROID RIDER APP** on the start page (file `public/ultralink.apk`), install it, enter the web address once.
-- GPS, telemetry and radio keep running with the screen off (notification "ULTRALINK active" with TALK / STOP TRACKING buttons; a Bluetooth/headset button toggles talk).
-- iPhone riders keep using the link in Safari with the screen on. After a call or app switch the page now reconnects, restores the mic and sends its position automatically.
-- The app source + signing key are kept separately (not in this repo).
+## Apps (Android + Windows)
+- **Android:** start page → **DOWNLOAD ANDROID APP** (`public/ultralink.apk`). Package `com.ultralink.app` — *uninstall the old v1.4 rider app first* (different package/signing key). Choose RIDER or ESCORT after login. In rider mode GPS, telemetry and radio keep running with the screen off (notification with TALK / STOP TRACKING; headset button toggles talk).
+- **Windows:** start page → **DOWNLOAD WINDOWS DESKTOP APP** (per-user install, no admin). Uses Windows Location for GPS (Settings → Privacy → Location must be ON), keeps the laptop awake, auto-retries when the relay sleeps. Change server: Ctrl+Shift+S.
+  - The installer (~84 MB) is too big for the GitHub web uploader, so it is **not in the repo**. Put it in a GitHub Release: repo → *Releases* → *Draft a new release* → tag `v1.5.0` → drag `ultralink-desktop-setup.exe` in → *Publish*. Then edit `desktop-url.txt` (replace `YOUR-NAME/YOUR-REPO`) — the start page button and `/ultralink-desktop-setup.exe` point there. Alternatively set the Render env var `DESKTOP_URL`. (A copy placed in `public/` is served directly instead.)
+- iPhone users keep using the link in Safari (Add to Home Screen).
+- Sources: `apps/android` (Gradle), `apps/desktop` (Electron), shared setup/offline screens in `apps/shared`. `.github/workflows/build-apps.yml` builds both on GitHub (Actions → *Build apps*). Release signing for Android: repo secrets `ULTRALINK_KEYSTORE_B64`, `ULTRALINK_KEYSTORE_PASSWORD`, `ULTRALINK_KEY_ALIAS`, `ULTRALINK_KEY_PASSWORD` — keep using the same keystore or phones won't accept updates.
 
 ## Planning (escort)
 1. Opens on an **earth view** (your own location is no longer shown). Saved missions appear as pins.

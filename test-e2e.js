@@ -33,7 +33,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   /* ---------------- boot (escort only, short) ---------------- */
   await sleep(500);
   const bootTxt = await esc.evaluate(() => document.getElementById('boot')?.innerText.replace(/\n+/g, ' | ').slice(0, 400));
-  check('escort boot: simple loader with checklist', /ULTRALINK/.test(bootTxt || '') && /SATELLITE|CORE/.test(bootTxt || ''), bootTxt);
+  const bootLogo = await esc.evaluate(() => !!document.querySelector('#boot .wm[aria-label="ULTRALINK"]'));
+  check('escort boot: simple loader with checklist', bootLogo && /SATELLITE|CORE/.test(bootTxt || ''), bootTxt);
   const t0 = Date.now();
   await esc.waitForSelector('#home', { state: 'visible', timeout: 20000 });
   await esc.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 10000 });

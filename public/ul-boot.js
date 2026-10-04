@@ -6,7 +6,8 @@
   #boot{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 40%,#08171d 0%,#020608 70%);transition:opacity .45s}
   #boot.out{opacity:0;pointer-events:none}
   #boot .bx{width:min(420px,86vw);text-align:center}
-  #boot .bl{font-size:clamp(22px,4vw,30px);letter-spacing:.55em;padding-left:.55em;color:var(--fg);text-shadow:0 0 22px rgba(0,229,255,.35)}
+  #boot .bl{font-size:clamp(22px,4vw,30px);color:var(--fg);line-height:1;filter:drop-shadow(0 0 10px rgba(0,229,255,.35))}
+  body.light #boot .bl{filter:none}
   #boot .bs{font-size:9px;letter-spacing:.4em;color:var(--dim);margin-top:10px}
   #boot .pb{height:2px;background:rgba(0,229,255,.12);margin:26px 0 18px;overflow:hidden}
   #boot .pb i{display:block;height:100%;width:0;background:var(--accent);box-shadow:0 0 10px var(--accent);transition:width .35s ease}
@@ -22,7 +23,7 @@
     const st = global.UL.bootState = global.UL.bootState || {};
     const tasks = opts.tasks || [];
     const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
-    root.innerHTML = `<div class="bx"><div class="bl">ULTRALINK</div><div class="bs">ESCORT CONSOLE · LOADING</div>
+    root.innerHTML = `<div class="bx"><div class="bl"><span class="wm" role="img" aria-label="ULTRALINK"></span></div><div class="bs">ESCORT CONSOLE · LOADING</div>
       <div class="pb"><i></i></div><ul>${tasks.map(t => `<li class="run" data-t="${t.id}"><b>${t.label}</b><span>…</span></li>`).join('')}</ul>
       <div class="sk">TAP OR PRESS ANY KEY TO SKIP</div></div>`;
     const bar = root.querySelector('.pb i'); let done = 0;
