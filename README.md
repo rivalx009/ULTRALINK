@@ -1,4 +1,6 @@
-# ULTRALINK — cycling telemetry & comms  (v1.5.1)
+# ULTRALINK — cycling telemetry & comms  (v1.5.2)
+
+**New in v1.5.2:** location is required — if the device's location is off or blocked, the loading screen stops with a **LOCATION DISABLED** box (RETRY; it also re-checks every 3 s and continues by itself once location is on). Tap/key skip can't bypass it.
 
 **New in v1.5.1:** the loading screen now greets you first — on the start page, before the mode select (once per session; escort mode opened directly still shows it). The Windows app always opens **full screen** (F11 or Ctrl+Shift+F toggles; Alt+F4 quits).
 
