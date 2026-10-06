@@ -1,4 +1,9 @@
-# ULTRALINK — cycling telemetry & comms  (v1.5.2)
+# ULTRALINK — cycling telemetry & comms  (v1.6)
+
+**New in v1.6**
+- **Race profiles** (formerly mission profiles) and the new **Training profiles** — two tabs in the planning panel. *Activate mission* is now **▶ ENTER PROFILE**.
+- **Training: route type detected on GPX import** — **A → B** (point-to-point) or **A → A** (loop; start/finish within ~150–400 m). For a loop, tick *THIS TRAINING INVOLVES LAPS*, set the number of laps (1–50) and a target time per lap (or one for all). Each lap target is split into sector targets by terrain, or set by hand lap by lap in ⏱ SECTOR TARGET TIMES. Live: sector times and targets per lap (unit pop-up, sector board LAP × SECTOR + LAP TIME, comms log "LAP 2 / 5 in 12:36 (+0:21 vs target)").
+- **Comms mode** (third mode on the start page, `comms.html`): intercom only — every device is a single unit, no telemetry or location. **CREATE CHANNEL** gives a 6-digit **Channel ID**; others use **JOIN EXISTING CHANNEL** and type it (or open the shared link). Hold to talk (Space / BT remote), or HANDS-FREE latch. Empty channels close after 30 min.
 
 **New in v1.5.2:** location is required — if the device's location is off or blocked, the loading screen stops with a **LOCATION DISABLED** box (RETRY; it also re-checks every 3 s and continues by itself once location is on). Tap/key skip can't bypass it.
 

@@ -132,8 +132,8 @@
         img.onerror = () => { clearTimeout(t); res({ warn: true, text: 'TILE SERVER UNREACHABLE' }); };
         img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x;
       }) },
-    { id: 'prof', label: 'MISSION PROFILES', subtitle: 'Loading mission profiles', min: 200,
-      run: async () => { let n = 0; try { n = JSON.parse(localStorage.ulProfiles || '[]').length; } catch (e) {} return { ok: true, text: n + ' PROFILE' + (n === 1 ? '' : 'S') + ' LOADED' }; } }
+    { id: 'prof', label: 'RACE & TRAINING PROFILES', subtitle: 'Loading profiles', min: 200,
+      run: async () => { let a = []; try { a = JSON.parse(localStorage.ulProfiles || '[]'); } catch (e) {} const t = a.filter(p => p && p.kind === 'training').length; return { ok: true, text: (a.length - t) + ' RACE · ' + t + ' TRAINING' }; } }
   ];}
   const seen = () => { try { return sessionStorage.ulBooted === '1'; } catch (e) { return false; } };
   global.UL = global.UL || {};

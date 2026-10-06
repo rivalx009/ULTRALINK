@@ -32,6 +32,20 @@
   .hpanel .hh{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.26em;color:var(--accent)}
   .hpanel .hb{flex:1;overflow:auto;padding:12px 14px;min-height:0}
   .hpanel .hf{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  .ptabs{display:flex;gap:0;border-bottom:1px solid var(--line)}
+  .ptabs button{flex:1;border:0;border-bottom:2px solid transparent;background:none;padding:9px 6px;font-size:10px;letter-spacing:.22em;color:var(--dim)}
+  .ptabs button b{font-weight:400;margin-left:4px;opacity:.8}
+  .ptabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:rgba(0,229,255,.05)}
+  .pitem .kind{display:inline-block;font-size:8px;letter-spacing:.18em;padding:1px 5px;border:1px solid var(--line2);margin-left:6px;vertical-align:1px;color:var(--warn)}
+  .rtype{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line2);margin:6px 0;font-size:10px;letter-spacing:.14em}
+  .rtype b{font-size:15px;letter-spacing:.12em;white-space:nowrap}
+  .rtype.aa{border-color:var(--good)} .rtype.aa b{color:var(--good)} .rtype.ab b{color:var(--accent)}
+  .laprow{display:grid;grid-template-columns:52px 1fr 86px;gap:8px;align-items:center;margin-bottom:5px;font-size:11px}
+  .laprow input{text-align:center;padding:6px}
+  .laptabs{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px}
+  .laptabs button{padding:4px 9px;font-size:10px}
+  .laptabs button.on{border-color:var(--accent);color:var(--accent)}
+  body.light .ptabs button.on{background:rgba(70,82,92,.08)}
   .pitem{border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,26,32,.85),rgba(6,14,18,.85));padding:10px 12px;margin-bottom:8px;cursor:pointer;position:relative;transition:.15s}
   .pitem:hover{border-color:var(--line2);transform:translateX(2px)}
   .pitem.sel{border-color:var(--accent);box-shadow:0 0 14px rgba(0,229,255,.2) inset}
@@ -338,7 +352,7 @@
   <div id="earthGlow"></div>
   <div class="seccard" id="pSecCard"></div>
   <div id="hTop">
-    <b class="brand" style="color:var(--fg)"><span class="wm" role="img" aria-label="ULTRALINK"></span></b><span>ESCORT · MISSION PLANNING</span>
+    <b class="brand" style="color:var(--fg)"><span class="wm" role="img" aria-label="ULTRALINK"></span></b><span>ESCORT · RACE &amp; TRAINING PLANNING</span>
     <span class="sp"></span>
     <span class="tag" id="hRelay">RELAY …</span><span id="hClk">--:--:--</span>
     <button class="ghost" id="hHelp" style="padding:4px 8px;font-size:9px" title="How this screen works">? HELP</button>
@@ -347,23 +361,24 @@
   </div>
 
   <div class="hpanel" id="profPanel">
-    <div class="hh">MISSION PROFILES<span class="sp"></span><span class="tag" id="pCount">0</span></div>
+    <div class="hh"><span id="pTitle">RACE PROFILES</span><span class="sp"></span><span class="tag" id="pCount">0</span></div>
+    <div class="ptabs"><button id="tabRace" class="on" title="Race profiles">RACE <b id="cRace">0</b></button><button id="tabTrain" title="Training profiles (loops &amp; laps)">TRAINING <b id="cTrain">0</b></button></div>
     <div class="hb" id="profList"></div>
     <div class="hf">
-      <button class="primary" id="pNew" style="flex:1 1 100%">＋ NEW MISSION PROFILE</button>
+      <button class="primary" id="pNew" style="flex:1 1 100%">＋ NEW RACE PROFILE</button>
       <button class="ghost" id="pJoin" style="flex:1">JOIN LIVE MISSION</button>
       <button class="ghost" id="pImport" style="flex:1" title="Load a saved .json profile file">IMPORT</button>
     </div>
   </div>
 
   <div class="hpanel" id="detPanel">
-    <div class="hh"><span id="dTitle">MISSION DETAILS</span><span class="sp"></span><span class="tag" id="dDirty"></span><button class="ghost" id="dPeek" style="padding:3px 9px" title="Show / hide the map">▾ MAP</button><button class="ghost" id="dClose" style="padding:3px 9px" title="Close panel">✕</button></div>
+    <div class="hh"><span id="dTitle">RACE PROFILE</span><span class="sp"></span><span class="tag" id="dDirty"></span><button class="ghost" id="dPeek" style="padding:3px 9px" title="Show / hide the map">▾ MAP</button><button class="ghost" id="dClose" style="padding:3px 9px" title="Close panel">✕</button></div>
     <div class="hb" id="dBody"></div>
     <div class="hf">
       <button id="dSave" style="flex:1">SAVE</button>
       <button id="dExport" class="ghost" title="Download this profile as a file">EXPORT</button>
       <button id="dDel" class="ghost danger">DELETE</button>
-      <button id="dGo" class="primary" style="flex:1 1 100%;padding:13px" title="Opens the mission so riders can join with the code">▶ ACTIVATE MISSION</button>
+      <button id="dGo" class="primary" style="flex:1 1 100%;padding:13px" title="Opens this profile live so riders can join with the code">▶ ENTER PROFILE</button>
     </div>
   </div>
   <div class="hudbox" id="hTools"></div>

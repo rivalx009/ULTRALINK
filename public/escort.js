@@ -27,15 +27,20 @@
 
   /* ============================================================ LAUNCH/JOIN */
   UL.Plan.onLaunch = ({ profile, route: r, startAt: sa }) => {
-    route = r; myCall = profile.escort.toUpperCase(); launchLead = profile.lead || null;
+    myCall = profile.escort.toUpperCase(); launchLead = profile.lead || null;
     joinInfo = { t: 'join', code: profile.code, role: 'escort', callsign: myCall, resume: resumeId(profile.code) };
+    /* training profile with laps: the loop is unrolled N times, every lap gets its own sectors + targets */
+    const training = profile.kind === 'training', X = training ? UL.expandLaps(profile, r) : null, laps = X ? X.laps : 1;
+    route = laps > 1 ? UL.buildRoute(X.pts.map(q => ({ lat: q[0], lon: q[1], ele: q[2] || 0 })), r.name) : r;
+    const secs = laps > 1 ? X.sectors : UL.normaliseSectors(X ? X.sectors : profile.sectors, r.distance);
     link.connect();
     link.send({
       t: 'mission.create', code: profile.code, name: profile.name || 'UNNAMED OP',
-      route: profile.route.pts, distance: r.distance,
+      route: laps > 1 ? X.pts : profile.route.pts, distance: route.distance,
       riders: profile.riders.filter(x => x.name).map(x => ({ codename: x.name, color: x.color })),
-      sectors: UL.normaliseSectors(profile.sectors, r.distance).map(s => ({ name: s.name, color: s.color, start: s.start, target: s.target || null, cp: s.cp || '', notes: s.notes || '' })),
-      startAt: sa || null, targetSec: profile.targetSec || null, lead: profile.lead || null
+      sectors: secs.map(s => Object.assign({ name: s.name, color: s.color, start: s.start, target: s.target || null, cp: s.cp || '', notes: s.notes || '' }, s.lap ? { lap: s.lap, li: s.li, base: s.base } : {})),
+      startAt: sa || null, targetSec: (X && X.targetSec) || profile.targetSec || null, lead: profile.lead || null,
+      kind: training ? 'training' : 'race', laps, lapLen: X ? X.lapLen : r.distance, lapTargets: X ? X.lapTargets : []
     });
   };
   /* the same laptop keeps its unit id across reconnects (voice links + cards survive a network blip) */
@@ -47,7 +52,7 @@
   function restoreMission() {
     if (Date.now() - restoring < 6000 || !mission) return; restoring = Date.now();
     link.send({ t: 'mission.create', code: mission.code, name: mission.name, route: mission.route, distance: mission.distance, riders: mission.riders,
-      sectors: mission.sectors, startAt: mission.startAt || null, targetSec: targetSec || mission.targetSec || null, lead: mission.lead || null,
+      sectors: mission.sectors, startAt: mission.startAt || null, kind: mission.kind, laps: mission.laps, lapLen: mission.lapLen, lapTargets: mission.lapTargets, targetSec: targetSec || mission.targetSec || null, lead: mission.lead || null,
       restore: true, clockStart, clockStop });
     log('SYS', 'RELAY RESTARTED — MISSION RESTORED', '#ffb000');
   }
@@ -68,21 +73,31 @@
     opsStarted = true;
     if (!route && mission.route && mission.route.length) route = UL.buildRoute(mission.route.map(p => ({ lat: p[0], lon: p[1], ele: p[2] || 0 })));
     if (route) tel.setRoute(route);
+    if (route && mission.laps > 1) { try { const k = +sessionStorage['ulIdx:' + mission.code]; if (k >= 0) tel.lastIdx = k; } catch (e) {} }
     clockStart = mission.clockStart || null; clockStop = mission.clockStop || null; targetSec = mission.targetSec || null; startAt = mission.startAt || null;
     sectors = UL.normaliseSectors(mission.sectors, route ? route.distance : 1);
     sectorTimer = new UL.SectorTimer(sectors, route ? route.distance : 1, {
-      checkpoint: (key, i, s) => { fx.checkpoint(); log('CP', `${key} passed ${UL.cpLabel(s)} — ${s.name}`, s.color); UL.toast(`${key} · ${s.name} STARTED`, 'ok'); },
+      checkpoint: (key, i, s) => {
+        fx.checkpoint(); log('CP', `${key} passed ${UL.cpLabel(s)} — ${s.name}`, s.color); UL.toast(`${key} · ${s.name} STARTED`, 'ok');
+        if (s.lap && s.li === 0) log('LAP', `${key} STARTED LAP ${s.lap} / ${mission.laps}`, '#ffb000');
+      },
       finish: (key, i, dur, s, isEnd) => {
         fx.sectorDone();
         const dl = s.target ? dur - s.target : null, dtxt = dl == null ? '' : ` (${dl <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(dl))} vs target)`;
         log('SEC', `${key} finished ${s.name} in ${UL.hmsStr(dur)}${dtxt}`, s.color);
         UL.toast(`${key} · ${s.name} ${UL.hmsStr(dur)}${dtxt}`, dl != null && dl > 0 ? 'warn' : 'ok', 5000);
-        if (isEnd) log('SYS', `${key} FINISHED THE ROUTE`, '#7cff5a');
+        if (s.lap && (isEnd || (sectors[i + 1] && sectors[i + 1].lap !== s.lap))) {          // last sector of a lap → lap time
+          const L = UL.lapTimes(sectors, sectorTimer.units.get(key)).find(x => x.lap === s.lap);
+          if (L && L.time != null) { const d2 = L.target ? L.time - L.target : null;
+            log('LAP', `${key} LAP ${s.lap} / ${mission.laps} in ${UL.hmsStr(L.time)}${d2 == null ? '' : ` (${d2 <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(d2))} vs target ${UL.hmsStr(L.target)})`}`, '#ffb000');
+            UL.toast(`${key} · LAP ${s.lap} ${UL.hmsStr(L.time)}`, d2 != null && d2 > 0 ? 'warn' : 'ok', 5000); }
+        }
+        if (isEnd) log('SYS', `${key} FINISHED THE ${mission.laps > 1 ? 'SESSION (' + mission.laps + ' LAPS)' : 'ROUTE'}`, '#7cff5a');
       }
     });
     UL.Plan.hide(); UL.Plan.closeJoin();
     $('shell').style.display = 'flex';
-    $('tMis').textContent = mission.name; $('tCode').textContent = 'CODE ' + mission.code;
+    $('tMis').textContent = mission.name + (mission.kind === 'training' ? ' · TRAINING' + (mission.laps > 1 ? ' · ' + mission.laps + ' LAPS' : '') : ''); $('tCode').textContent = 'CODE ' + mission.code;
     initMap(); initVoice(); startGeo(); layoutHandles(); renderSel(); bindMissionControls(); initGraph(); initOpsExtras();
     initPower(); initWidgets(); initMobile();
     if (leadName) log('SYS', '★ LEAD RIDER: ' + leadName, '#ffb000');
@@ -193,15 +208,16 @@
     if (routeGroup) map.removeLayer(routeGroup);
     routeGroup = L.layerGroup().addTo(map);
     const P = route.points;
-    sectors.forEach(s => {
+    sectors.filter(s => !s.lap || s.lap === 1).forEach(s => {          // lap routes: the loop is drawn once
       const seg = UL.sectorLine(route, s);
       if (seg.length > 1) { L.polyline(seg, { color: '#000', weight: 7, opacity: .5 }).addTo(routeGroup); L.polyline(seg, { color: s.color, weight: 3, opacity: .95 }).addTo(routeGroup); }
       const a = UL.routeAt(route, s.start);
-      L.marker([a.lat, a.lon], { icon: UL.cpIcon(s.color, UL.cpLabel(s)), zIndexOffset: 100, title: UL.cpLabel(s) + ' · ' + s.name })
+      const lbl = s.lap && s.li === 0 ? 'START / LAPS' : UL.cpLabel(s);
+      L.marker([a.lat, a.lon], { icon: UL.cpIcon(s.color, lbl), zIndexOffset: 100, title: lbl + ' · ' + (s.base || s.name) })
         .on('click', () => openOpsSector(s.idx)).addTo(routeGroup);
     });
     const e = P[P.length - 1];
-    L.marker([e.lat, e.lon], { icon: UL.cpIcon('#fff', 'FINISH', { finish: true }), zIndexOffset: 100, interactive: false }).addTo(routeGroup);
+    if (!(mission && mission.laps > 1)) L.marker([e.lat, e.lon], { icon: UL.cpIcon('#fff', 'FINISH', { finish: true }), zIndexOffset: 100, interactive: false }).addTo(routeGroup);
   }
   function fitRoute(instant) { if (route) map.fitBounds(L.latLngBounds(route.points.map(p => [p.lat, p.lon])), { padding: [40, 40], animate: !instant }); }
   function setLayer(k) {
@@ -253,6 +269,7 @@
   }
   let lastTx = 0;
   tel.addEventListener('update', e => {
+    if (mission && mission.laps > 1 && tel.lastIdx != null) { try { sessionStorage['ulIdx:' + mission.code] = tel.lastIdx; } catch (x) {} }
     const s = e.detail;
     if (!map) return;
     if (!selfMarker && s.lat != null) {
@@ -539,11 +556,14 @@
     if (route && sectors.length) {
       h += `<div class="psec">SECTORS</div>`;
       const st = sectorTimer && sectorTimer.units.get(u.callsign);
+      const LT = mission.laps > 1 ? UL.lapTimes(sectors, st) : null;
       sectors.forEach((s, i) => {
+        if (LT && s.li === 0) { const L = LT.find(x => x.lap === s.lap), d2 = L.time != null && L.target ? L.time - L.target : null;
+          h += `<div class="seclr" style="margin-top:6px;border-top:1px solid var(--line2);padding-top:5px"><i style="background:transparent"></i><span style="color:var(--warn);letter-spacing:.18em">LAP ${s.lap}${L.current ? ' ▸' : ''}</span><b>${L.time != null ? UL.hmsStr(L.time) : L.part ? '▸ ' + UL.hmsStr(L.part) : '—'}</b><span style="color:${d2 == null ? 'var(--dim)' : d2 <= 0 ? 'var(--good)' : 'var(--bad)'}">${d2 != null ? (d2 <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(d2)) : L.target ? 'TGT ' + UL.hmsStr(L.target) : ''}</span></div>`; }
         const t = st && st.times[i], run = st && st.cur === i ? sectorTimer.running(u.callsign) : null;
         const val = t != null ? UL.hmsStr(t) : run != null ? '▸ ' + UL.hmsStr(run) : '—';
         const dl = t != null && s.target ? t - s.target : null;
-        h += `<div class="seclr"><i style="background:${s.color}"></i><span>${esc(s.name)}</span><b>${val}</b><span style="color:${dl == null ? 'var(--dim)' : dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl != null ? (dl <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(dl)) : (s.target ? 'TGT ' + UL.hmsStr(s.target) : '')}</span></div>`;
+        h += `<div class="seclr"><i style="background:${s.color}"></i><span>${esc(LT ? s.base || s.name : s.name)}</span><b>${val}</b><span style="color:${dl == null ? 'var(--dim)' : dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl != null ? (dl <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(dl)) : (s.target ? 'TGT ' + UL.hmsStr(s.target) : '')}</span></div>`;
       });
     }
     h += '</div>';
@@ -580,6 +600,7 @@
   /* ===================================================== SECTOR BOARD */
   let boardTimer = null;
   function openBoard() {
+    if (mission && mission.laps > 1) return openLapBoard();
     const draw = () => {
       const riders = sortedUnits().filter(u => u.role === 'rider');
       const head = sectors.map(s => `<th style="border-bottom:3px solid ${s.color};padding:6px 8px;font-size:9px;letter-spacing:.12em">${esc(s.name)}<br><span class="muted">${((s.end - s.start) / 1000).toFixed(1)} km${s.target ? ' · TGT ' + UL.hmsStr(s.target) : ''}</span></th>`).join('');
@@ -596,6 +617,32 @@
       }).join('') || `<tr><td colspan="${sectors.length + 2}" class="muted" style="padding:16px;text-align:center">No riders connected yet.</td></tr>`;
       $('dlgBoard').innerHTML = `<div style="padding:18px"><div class="row"><h3>SECTOR BOARD</h3><span class="sp"></span><span class="hint">Times start at each checkpoint and stop at the next.</span></div>
         <div style="overflow:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums"><tr><th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim)">RIDER</th>${head}<th style="font-size:9px;color:var(--dim)">TOTAL</th></tr>${rows}</table></div>
+        <button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
+    };
+    draw(); $('dlgBoard').showModal(); fx.open();
+    clearInterval(boardTimer); boardTimer = setInterval(() => { if ($('dlgBoard').open) draw(); else clearInterval(boardTimer); }, 1000);
+  }
+
+  /* lap sessions: one table per rider — a row per lap, a column per sector, then the lap time vs the lap target */
+  function openLapBoard() {
+    const base = sectors.filter(s => s.lap === 1), cell = 'padding:6px 8px;text-align:center';
+    const dlt = (t, tg) => { const d = t != null && tg ? t - tg : null; return d == null ? '' : `<br><span style="font-size:9px;color:${d <= 0 ? 'var(--good)' : 'var(--bad)'}">${d <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(d))}</span>`; };
+    const draw = () => {
+      const riders = sortedUnits().filter(u => u.role === 'rider');
+      const head = `<tr><th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim)">LAP</th>${base.map(s => `<th style="border-bottom:3px solid ${s.color};padding:6px 8px;font-size:9px;letter-spacing:.12em">${esc(s.base || s.name)}<br><span class="muted">${((s.end - s.start) / 1000).toFixed(1)} km</span></th>`).join('')}<th style="font-size:9px;color:var(--warn);letter-spacing:.14em">LAP TIME</th></tr>`;
+      const body = riders.map(u => {
+        const st = sectorTimer.units.get(u.callsign), LT = UL.lapTimes(sectors, st);
+        const rows = LT.map(L => `<tr style="border-top:1px solid var(--line)${L.current ? ';background:rgba(255,176,0,.07)' : ''}"><td style="padding:6px 8px;color:var(--warn);letter-spacing:.14em;white-space:nowrap">LAP ${L.lap}${L.current ? ' ▸' : ''}</td>${L.idx.map(i => {
+            const s = sectors[i], t = st && st.times[i], run = st && st.cur === i ? sectorTimer.running(u.callsign) : null;
+            if (t != null) return `<td style="${cell}"><b>${UL.hmsStr(t)}</b>${dlt(t, s.target)}</td>`;
+            if (run != null) return `<td style="${cell};color:var(--warn)">▸ ${UL.hmsStr(run)}${s.target ? `<br><span class="muted" style="font-size:9px">TGT ${UL.hmsStr(s.target)}</span>` : ''}</td>`;
+            return `<td style="${cell}" class="muted">—${s.target ? `<br><span style="font-size:9px">TGT ${UL.hmsStr(s.target)}</span>` : ''}</td>`;
+          }).join('')}<td style="${cell}"><b>${L.time != null ? UL.hmsStr(L.time) : '—'}</b>${L.time != null ? dlt(L.time, L.target) : L.target ? `<br><span class="muted" style="font-size:9px">TGT ${UL.hmsStr(L.target)}</span>` : ''}</td></tr>`).join('');
+        const tot = LT.every(L => L.time != null) ? LT.reduce((a, L) => a + L.time, 0) : null;
+        return `<div style="margin-top:14px"><div class="row"><b style="color:${cfg.colorFor(u.callsign, u.color)};letter-spacing:.14em">${esc(u.callsign)}</b><span class="sp"></span><span class="hint">TOTAL ${tot != null ? UL.hmsStr(tot) : '—'}${mission.targetSec ? ' · TARGET ' + UL.hmsStr(mission.targetSec) : ''}</span></div>
+          <div style="overflow:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums">${head}${rows}</table></div></div>`;
+      }).join('') || '<div class="muted" style="padding:16px;text-align:center">No riders connected yet.</div>';
+      $('dlgBoard').innerHTML = `<div style="padding:18px"><div class="row" style="flex-wrap:wrap"><h3>SECTOR BOARD · ${mission.laps} LAPS</h3><span class="sp"></span><span class="hint">Sector times and targets lap by lap.</span></div>${body}
         <button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
     };
     draw(); $('dlgBoard').showModal(); fx.open();

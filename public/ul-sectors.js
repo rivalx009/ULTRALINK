@@ -211,6 +211,60 @@
     if (g < 4) return '#d6f53b'; if (g < 6) return '#ffd21f'; if (g < 8) return '#ffb000'; if (g < 10) return '#ff6a2b'; return '#ff2d55';
   }
 
+  /* ---- TRAINING PROFILES: route type + laps ----
+   * routeType: does the GPX finish where it starts (A → A, loop) or somewhere else (A → B)?
+   * lapPlan:   sector target times of every lap (lap target split by terrain/distance, or set by hand per lap)
+   * expandLaps: the live mission uses the route unrolled N times, so tracking, ETA and the checkpoint
+   *            stopwatch work unchanged; each lap gets its own copy of the sectors ("L2 · CLIMB").       */
+  function haversineM(a, b) { const R = 6371000, r = Math.PI / 180, dla = (b.lat - a.lat) * r, dlo = (b.lon - a.lon) * r;
+    const h = Math.sin(dla / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dlo / 2) ** 2; return 2 * R * Math.asin(Math.min(1, Math.sqrt(h))); }
+  function routeType(route) {
+    if (!route || !route.points || route.points.length < 2) return null;
+    const P = route.points, gap = haversineM(P[0], P[P.length - 1]);
+    const tol = Math.max(150, Math.min(400, route.distance * 0.01));
+    return { loop: gap <= tol && route.distance > 1000, gap: Math.round(gap), tol: Math.round(tol) };
+  }
+  const clone = o => JSON.parse(JSON.stringify(o));
+  function lapPlan(p, route) {
+    const laps = p.lapsOn && p.loop !== false ? Math.max(1, Math.min(50, p.laps | 0 || 1)) : 1;
+    const base = normalise(clone(p.sectors || []), route.distance);
+    const out = [];
+    for (let k = 0; k < laps; k++) {
+      const lt = (p.lapTargets || [])[k] || null, man = (p.lapSec || [])[k];
+      let t;
+      if (p.lapAuto === false && Array.isArray(man) && man.length === base.length) t = man.slice();
+      else if (lt) t = autoTargets(route, clone(base), lt, p.autoMode || 'effort').sectors.map(x => x.target);
+      else if (Array.isArray(man) && man.length === base.length) t = man.slice();
+      else t = base.map(x => x.target || null);
+      out.push({ lap: k + 1, target: lt || (t.every(x => x) ? t.reduce((a, b) => a + b, 0) : null), sec: t });
+    }
+    return out;
+  }
+  function expandLaps(p, route) {
+    const plan = lapPlan(p, route), laps = plan.length, L = route.distance;
+    const base = normalise(clone(p.sectors || []), L);
+    if (laps < 2) return { laps: 1, lapLen: L, route, pts: p.route.pts, sectors: base.map((s, i) => Object.assign(s, { target: plan[0].sec[i] || s.target || null })), lapTargets: [plan[0].target], targetSec: p.targetSec || plan[0].target || null };
+    let P = route.points;
+    const cap = Math.max(300, Math.floor(6000 / laps));
+    if (P.length > cap) { const st = Math.ceil(P.length / cap); P = P.filter((_, i) => i % st === 0 || i === P.length - 1); }
+    const pts = [];
+    for (let k = 0; k < laps; k++) P.forEach((q, i) => { if (k && i === 0) return; pts.push([+q.lat.toFixed(6), +q.lon.toFixed(6), Math.round(q.ele)]); });
+    const sectors = [];
+    plan.forEach((lp, k) => base.forEach((s, i) => sectors.push({ name: 'LAP ' + lp.lap + ' · ' + s.name, base: s.name, lap: lp.lap, li: i, color: s.color,
+      start: Math.round(s.start + k * L), target: lp.sec[i] || null, cp: i === 0 ? (k === 0 ? (s.cp || 'START') : 'LAP ' + lp.lap) : (s.cp || 'CP' + i), notes: s.notes || '' })));
+    const lapTargets = plan.map(x => x.target), sum = lapTargets.every(Boolean) ? lapTargets.reduce((a, b) => a + b, 0) : null;
+    return { laps, lapLen: L, pts, sectors, lapTargets, targetSec: sum || p.targetSec || null };
+  }
+  /** lap summary for one unit of a SectorTimer: [{lap, time (if every sector done), target, done, running}] */
+  function lapTimes(sectors, st) {
+    const by = new Map();
+    sectors.forEach((s, i) => { if (!s.lap) return; const L = by.get(s.lap) || { lap: s.lap, idx: [], target: 0, tOk: true }; L.idx.push(i); if (s.target) L.target += s.target; else L.tOk = false; by.set(s.lap, L); });
+    return [...by.values()].map(L => {
+      const ts = L.idx.map(i => st && st.times[i]), done = ts.every(t => t != null);
+      return { lap: L.lap, idx: L.idx, time: done ? ts.reduce((a, b) => a + b, 0) : null, part: ts.reduce((a, b) => a + (b || 0), 0), target: L.tOk ? L.target : null, current: !!(st && L.idx.includes(st.cur)) };
+    });
+  }
+
   global.UL = global.UL || {};
-  Object.assign(global.UL, { sectorLine, cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
+  Object.assign(global.UL, { routeType, lapPlan, expandLaps, lapTimes, sectorLine, cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
 })(window);

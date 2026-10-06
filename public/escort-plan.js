@@ -1,4 +1,4 @@
-/* ULTRALINK — ESCORT home: live-location map + mission profile manager (save / delete / schedule / sectors) */
+/* ULTRALINK — ESCORT home: live-location map + RACE / TRAINING profile manager (save / delete / schedule / sectors / laps) */
 (() => {
   const $ = id => document.getElementById(id);
   const cfg = UL.cfg = new UL.Settings(); cfg.apply();
@@ -143,7 +143,7 @@
     pinGroup = L.layerGroup().addTo(hmap);
     profiles.filter(p => p.route && p.route.pts && p.route.pts.length && p.id !== curId).forEach(p => {
       const q = p.route.pts[0];
-      L.marker([q[0], q[1]], { icon: L.divIcon({ className: 'mpin', iconSize: [14, 14], iconAnchor: [7, 7], html: `<i></i><span>${esc(p.name || 'MISSION')}</span>` }), zIndexOffset: 300 })
+      L.marker([q[0], q[1]], { icon: L.divIcon({ className: 'mpin', iconSize: [14, 14], iconAnchor: [7, 7], html: `<i></i><span>${esc(p.name || 'PROFILE')}</span>` }), zIndexOffset: 300 })
         .on('click', () => openProfile(p.id)).addTo(pinGroup);
     });
   }
@@ -182,19 +182,36 @@
 
   /* --------------------------------------------------- profile list UI */
   let curId = null, cur = null, built = null, origJson = '';
+  /* RACE / TRAINING tabs */
+  const kindOf = p => p && p.kind === 'training' ? 'training' : 'race';
+  let tab = localStorage.ulPlanTab === 'training' ? 'training' : 'race';
+  const isTraining = () => kindOf(cur) === 'training';
+  function setTab(k) {
+    tab = k; try { localStorage.ulPlanTab = k; } catch (e) {}
+    $('tabRace').classList.toggle('on', k === 'race'); $('tabTrain').classList.toggle('on', k === 'training');
+    $('pTitle').textContent = k === 'training' ? 'TRAINING PROFILES' : 'RACE PROFILES';
+    $('pNew').textContent = k === 'training' ? '＋ NEW TRAINING PROFILE' : '＋ NEW RACE PROFILE';
+    renderList();
+  }
+  $('tabRace').onclick = () => { setTab('race'); fx.tick(); };
+  $('tabTrain').onclick = () => { setTab('training'); fx.tick(); };
 
   function renderList() {
-    $('pCount').textContent = profiles.length;
+    const list = profiles.filter(p => kindOf(p) === tab);
+    $('pCount').textContent = list.length;
+    $('cRace').textContent = profiles.filter(p => kindOf(p) === 'race').length; $('cTrain').textContent = profiles.filter(p => kindOf(p) === 'training').length;
     renderPins();
-    if (!profiles.length) {
-      $('profList').innerHTML = `<div class="hint" style="padding:10px 4px;line-height:1.8">No mission profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW MISSION PROFILE</b> to plan a race: import the GPX, set the date and departure time, drop checkpoints on the route and assign rider codenames. Everything is saved on this device.</div>`;
+    if (!list.length) {
+      $('profList').innerHTML = tab === 'training'
+        ? `<div class="hint" style="padding:10px 4px;line-height:1.8">No training profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW TRAINING PROFILE</b>, import the GPX and ULTRALINK tells you straight away whether the route goes <b>A → B</b> or loops back <b>A → A</b>. For a loop you can set the number of <b>laps</b> and a target time for each lap; sector times are then shown lap by lap.</div>`
+        : `<div class="hint" style="padding:10px 4px;line-height:1.8">No race profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW RACE PROFILE</b> to plan a race: import the GPX, set the date and departure time, drop checkpoints on the route and assign rider codenames. Everything is saved on this device.</div>`;
       return;
     }
-    const sorted = profiles.slice().sort((a, b) => (startMs(a) || 9e15) - (startMs(b) || 9e15));
+    const sorted = list.slice().sort((a, b) => (startMs(a) || 9e15) - (startMs(b) || 9e15));
     $('profList').innerHTML = sorted.map(p => {
       const c = cdInfo(p), km = p.route ? (p.route.distance / 1000).toFixed(1) + ' KM' : 'NO ROUTE';
       return `<div class="pitem ${p.id === curId ? 'sel' : ''}" data-id="${p.id}">
-        <div class="pn">${esc(p.name || 'UNNAMED')}</div>
+        <div class="pn">${esc(p.name || 'UNNAMED')}${kindOf(p) === 'training' ? `<span class="kind">${p.loop ? 'A→A' : p.route ? 'A→B' : 'TRAINING'}${p.lapsOn && p.laps > 1 ? ' · ' + p.laps + ' LAPS' : ''}</span>` : ''}</div>
         <div class="pm">CODE <b style="color:var(--fg)">${esc(p.code)}</b> · ${km}<br>${p.date ? esc(p.date) : '—'} ${esc(p.time || '')} · ${(p.riders || []).filter(r => r.name).length} RIDERS · ${(p.sectors || []).length || 1} SECTORS${p.lead ? ' · ★ ' + esc(p.lead) : ''}</div>
         <span class="cd ${c.c}" data-cd="${p.id}">${c.t}</span>
         <button class="ghost x" data-del="${p.id}" title="Delete profile">✕</button></div>`;
@@ -224,8 +241,9 @@
 
   $('pNew').onclick = async () => {
     if (!(await guardDirty())) return;
-    const p = { id: uid(), name: 'NEW MISSION', code: code6(), date: '', time: '', escort: localStorage.ulEscortCall || '', targetSec: null, autoT: false, autoMode: 'effort', lead: '',
+    const p = { id: uid(), kind: tab, name: tab === 'training' ? 'NEW TRAINING' : 'NEW RACE', code: code6(), date: '', time: '', escort: localStorage.ulEscortCall || '', targetSec: null, autoT: false, autoMode: 'effort', lead: '',
       riders: [{ name: '', color: UL.COLORS[0] }, { name: '', color: UL.COLORS[1] }], route: null, sectors: [], created: Date.now() };
+    if (tab === 'training') Object.assign(p, { loop: null, lapsOn: false, laps: 2, lapTargets: [], lapAuto: true, lapSec: null });
     profiles.push(p); persist(); renderList(); openProfile(p.id, true); fx.success();
   };
 
@@ -238,6 +256,7 @@
   async function openProfile(id, isNew) {
     if (id !== curId && !(await guardDirty())) return;
     const p = profiles.find(x => x.id === id); if (!p) return;
+    if (kindOf(p) !== tab) setTab(kindOf(p));
     curId = id; cur = JSON.parse(JSON.stringify(p)); origJson = JSON.stringify(p);
     if (cur.autoMode == null) cur.autoMode = 'effort';
     built = cur.route ? UL.buildRoute(cur.route.pts.map(q => ({ lat: q[0], lon: q[1], ele: q[2] || 0 })), cur.route.name) : null;
@@ -262,12 +281,13 @@
 
   function renderDetail() {
     const p = cur; if (!p) return;
-    $('dTitle').textContent = 'MISSION DETAILS';
+    const T = isTraining();
+    $('dTitle').textContent = T ? 'TRAINING PROFILE' : 'RACE PROFILE';
     $('dBody').innerHTML = `
       <div class="sech"><span class="stepnum">1</span>IDENTITY</div>
       <div class="fgrid">
         <div class="fld" style="grid-column:1/3"><label>Operation name</label><input id="fName" value="${esc(p.name)}" style="text-transform:uppercase" placeholder="OP NORTHWIND"></div>
-        <div class="fld"><label>Mission code <span class="muted">(riders enter this)</span></label>
+        <div class="fld"><label>${T ? 'Session' : 'Race'} code <span class="muted">(riders enter this)</span></label>
           <div class="row"><input id="fCode" value="${esc(p.code)}" maxlength="8" style="text-align:center;letter-spacing:.3em;text-transform:uppercase"><button id="fRegen" class="ghost" title="New random code">⟳</button></div></div>
         <div class="fld"><label>Your escort callsign</label><input id="fEsc" value="${esc(p.escort)}" placeholder="ESCORT-1" style="text-transform:uppercase"></div>
       </div>
@@ -276,23 +296,24 @@
       <div class="fgrid">
         <div class="fld"><label>Date</label><input type="date" id="fDate" value="${esc(p.date)}"></div>
         <div class="fld"><label>Departure time</label><input type="time" id="fTime" value="${esc(p.time)}"></div>
-        <div class="fld"><label>Overall target time (h:mm:ss)</label><input id="fTarget" value="${p.targetSec ? UL.hmsStr(p.targetSec) : ''}" placeholder="e.g. 1:15:00"></div>
+        <div class="fld"><label>Overall target time (h:mm:ss)</label><input id="fTarget" value="${p.targetSec ? UL.hmsStr(p.targetSec) : ''}" placeholder="e.g. 1:15:00"><div class="hint" id="fTargetLap" style="display:none;margin-top:3px">= sum of the lap targets (step 4)</div></div>
         <div class="fld"><label>Countdown</label><div style="padding-top:8px"><span class="tag" id="dCd">—</span></div></div>
       </div>
-      <div class="autobox">
+      <div class="autobox" id="fAutoBox">
         <label class="row" style="margin:0;gap:8px;cursor:pointer"><input type="checkbox" id="fAutoT" ${p.autoT ? 'checked' : ''} style="width:auto"> AUTO-CALCULATE SECTOR TARGETS FROM THE OVERALL TARGET</label>
         <div class="row" style="margin-top:8px;gap:8px"><span class="hint">Split by</span>
           <select id="fAutoMode" style="flex:1;padding:6px"><option value="effort" ${p.autoMode !== 'distance' ? 'selected' : ''}>Terrain — constant effort (climbs get more time)</option><option value="distance" ${p.autoMode === 'distance' ? 'selected' : ''}>Distance only</option></select></div>
         <div class="hint" id="fAutoInfo" style="margin-top:6px"></div>
       </div>
-      <div class="hint" style="margin-top:6px">When you activate the mission, a countdown to this date and time runs on every screen and the mission clock starts automatically at zero.</div>
+      <div class="hint" style="margin-top:6px">When you enter the profile, a countdown to this date and time runs on every screen and the mission clock starts automatically at zero.</div>
 
       <div class="sech"><span class="stepnum">3</span>ROUTE (GPX)</div>
       <div class="row"><button id="fGpxBtn" class="primary" style="flex:1">${built ? '⟳ REPLACE GPX FILE' : '⤒ IMPORT GPX FILE'}</button><input type="file" id="fGpx" accept=".gpx,application/gpx+xml,application/octet-stream,text/xml" style="display:none"></div>
       <div class="hint" id="fRouteInfo" style="margin-top:6px"></div>
       <canvas id="setupProf" style="margin-top:8px"></canvas>
 
-      <div class="sech"><span class="stepnum">4</span>SECTORS &amp; CHECKPOINTS</div>
+      ${T ? `<div class="sech"><span class="stepnum">4</span>ROUTE TYPE &amp; LAPS</div><div id="lapBox"></div>` : ''}
+      <div class="sech"><span class="stepnum">${T ? 5 : 4}</span>SECTORS &amp; CHECKPOINTS</div>
       <div class="hint">Press <b style="color:var(--accent)">✚ ADD CHECKPOINT</b> on the map and click the route (or click the profile above). Each checkpoint starts a sector. Drag a dot to move it, click it to give it a designation. Click a sector on the map to see its gradient profile and write notes.</div>
       <div class="row" style="margin:8px 0;gap:6px;flex-wrap:wrap"><span class="hint">Quick split into</span><input type="number" id="fSplitN" min="1" max="12" value="3" style="width:64px;padding:5px"><span class="hint">equal sectors</span>
         <button id="fSplit" class="ghost" style="padding:5px 10px;font-size:10px">SPLIT</button></div>
@@ -300,11 +321,11 @@
       <div id="secList"></div>
       <button id="fSecT" class="ghost" style="width:100%;margin-top:6px" title="Set the target completion time of each sector">⏱ SECTOR TARGET TIMES…</button>
 
-      <div class="sech"><span class="stepnum">5</span>RIDERS &amp; CODENAMES</div>
+      <div class="sech"><span class="stepnum">${T ? 6 : 5}</span>RIDERS &amp; CODENAMES</div>
       <div id="riderList"></div>
       <button id="fAddRider" class="ghost" style="margin-top:6px">＋ ADD RIDER</button>
       <div class="fld" style="margin-top:12px"><label>★ Lead rider <span class="muted">(main follow-up on this escort's screen)</span></label><select id="fLead"></select></div>
-      <div class="hint" style="margin-top:6px">Riders type the mission code and choose their own callsign on their phone. Matching callsigns get these colours. The lead rider can also be changed live during the mission.</div>`;
+      <div class="hint" style="margin-top:6px">Riders type the ${T ? 'session' : 'race'} code and choose their own callsign on their phone. Matching callsigns get these colours. The lead rider can also be changed live during the mission.</div>`;
     const bind = (id, fn, ev) => { const e = $(id); if (e) e[ev || 'oninput'] = fn; };
     bind('fName', e => { cur.name = e.target.value.toUpperCase(); dirty(); });
     bind('fCode', e => { cur.code = e.target.value.toUpperCase(); dirty(); });
@@ -332,7 +353,57 @@
     };
     cv.onmousemove = e => { hoverX = e.clientX - cv.getBoundingClientRect().left; drawSetupProfile(); };
     cv.onmouseleave = () => { hoverX = null; drawSetupProfile(); };
-    renderRouteInfo(); renderSectors(); renderRiders(); autoInfo(); dirty(); requestAnimationFrame(drawSetupProfile);
+    renderRouteInfo(); renderLaps(); renderSectors(); renderRiders(); autoInfo(); dirty(); requestAnimationFrame(drawSetupProfile);
+  }
+
+  /* ---------------- TRAINING: route type (A → B / A → A) + laps with a target time each ---------------- */
+  const lapCount = () => (cur && isTraining() && cur.loop && cur.lapsOn) ? Math.max(1, Math.min(50, cur.laps | 0 || 1)) : 1;
+  const hasLaps = () => lapCount() > 1;
+  function lapTotal() { const n = lapCount(), t = (cur.lapTargets || []).slice(0, n); return t.length === n && t.every(Boolean) ? t.reduce((a, b) => a + b, 0) : null; }
+  function syncLapTarget() {
+    const on = hasLaps(), ft = $('fTarget'), fl = $('fTargetLap'), ab = $('fAutoBox');
+    if (ab) ab.style.display = on ? 'none' : '';
+    if (fl) fl.style.display = on ? 'block' : 'none';
+    if (ft) { ft.disabled = on; if (on) { const t = lapTotal(); cur.targetSec = t || null; ft.value = t ? UL.hmsStr(t) : ''; } }
+  }
+  function renderLaps() {
+    const box = $('lapBox'); if (!box) { syncLapTarget(); return; }
+    if (!built) { box.innerHTML = '<div class="hint">Import the GPX file first — ULTRALINK then detects at once whether the route goes from <b>A to B</b> or finishes back at its start (<b>A → A</b>, a loop that can be ridden in laps).</div>'; syncLapTarget(); return; }
+    const rt = UL.routeType(built); cur.loop = !!(rt && rt.loop);
+    const gap = rt ? (rt.gap >= 1000 ? (rt.gap / 1000).toFixed(1) + ' km' : rt.gap + ' m') : '?';
+    if (!cur.loop) {
+      cur.lapsOn = false;
+      box.innerHTML = `<div class="rtype ab"><b>A → B</b><span>POINT-TO-POINT · the finish is ${gap} from the start</span></div><div class="hint">Laps are only possible when the route finishes where it starts. Sectors and target times work as usual.</div>`;
+      syncLapTarget(); return;
+    }
+    const n = lapCount(), L = built.distance;
+    cur.lapTargets = (cur.lapTargets || []).slice(0, 50);
+    let h = `<div class="rtype aa"><b>A → A</b><span>LOOP · the finish is ${gap} from the start</span></div>
+      <label class="row" style="margin:8px 0;gap:8px;cursor:pointer"><input type="checkbox" id="fLapsOn" ${cur.lapsOn ? 'checked' : ''} style="width:auto"> THIS TRAINING INVOLVES LAPS</label>`;
+    if (cur.lapsOn) {
+      h += `<div class="row" style="gap:8px;margin-bottom:10px"><span class="hint">Number of laps</span><input type="number" id="fLaps" min="1" max="50" value="${n}" style="width:70px;padding:5px;text-align:center"><span class="hint">× ${(L / 1000).toFixed(2)} km = <b style="color:var(--fg)">${(n * L / 1000).toFixed(1)} km</b></span></div>
+        <div class="laprow hint" style="font-size:9px;letter-spacing:.16em"><span>LAP</span><span>TARGET TIME (h:mm:ss)</span><span style="text-align:right">AVG</span></div>`;
+      for (let k = 0; k < n; k++) {
+        const t = cur.lapTargets[k] || null;
+        h += `<div class="laprow"><span>LAP ${k + 1}</span><input data-lt="${k}" value="${t ? UL.hmsStr(t) : ''}" placeholder="mm:ss"><span class="hint" data-lsp="${k}" style="text-align:right">${t ? cfg.speed(L / t).toFixed(1) + ' ' + cfg.speedU().toLowerCase() : ''}</span></div>`;
+      }
+      h += `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><span class="hint">Same target for every lap</span><input id="fLapAll" placeholder="mm:ss" style="width:84px;padding:5px;text-align:center"><button class="ghost" id="fLapFill" style="padding:5px 10px;font-size:10px">APPLY</button></div>
+        <label class="row" style="margin:8px 0 0;gap:8px;cursor:pointer"><input type="checkbox" id="fLapAuto" ${cur.lapAuto !== false ? 'checked' : ''} style="width:auto"> SPLIT EACH LAP TARGET INTO SECTOR TARGETS (${cur.autoMode === 'distance' ? 'BY DISTANCE' : 'BY TERRAIN'})</label>
+        <div class="hint" id="fLapSum" style="margin-top:6px"></div>
+        <div class="hint" style="margin-top:4px">During the session every lap has its own sector times and sector targets (⏱ SECTOR TARGET TIMES shows them lap by lap).</div>`;
+    } else h += '<div class="hint">Tick the box if the route is ridden several times. Leave it off for a single loop.</div>';
+    box.innerHTML = h;
+    const sum = () => { const el = $('fLapSum'); if (!el) return; const t = lapTotal(); el.innerHTML = t ? `TOTAL TARGET <b style="color:var(--fg)">${UL.hmsStr(t)}</b> · avg ${cfg.speed(n * L / t).toFixed(1)} ${cfg.speedU().toLowerCase()}` : '<span style="color:var(--warn)">Enter a target for every lap to get the overall target.</span>'; };
+    const on = $('fLapsOn'); if (on) on.onchange = () => { cur.lapsOn = on.checked; if (cur.lapsOn && (cur.laps | 0) < 2) cur.laps = 2; renderLaps(); renderSectors(); dirty(); fx.tick(); };
+    const nl = $('fLaps'); if (nl) nl.onchange = () => { cur.laps = Math.max(1, Math.min(50, +nl.value | 0 || 1)); renderLaps(); renderSectors(); dirty(); };
+    box.querySelectorAll('[data-lt]').forEach(el => el.oninput = () => {
+      const k = +el.dataset.lt, t = UL.parseHMS(el.value); cur.lapTargets[k] = t;
+      const sp = box.querySelector(`[data-lsp="${k}"]`); if (sp) sp.textContent = t ? cfg.speed(L / t).toFixed(1) + ' ' + cfg.speedU().toLowerCase() : '';
+      sum(); syncLapTarget(); dirty();
+    });
+    const fill = $('fLapFill'); if (fill) fill.onclick = () => { const t = UL.parseHMS($('fLapAll').value); if (!t) { fx.error(); return UL.toast('ENTER A LAP TIME (mm:ss)', 'warn'); } for (let k = 0; k < n; k++) cur.lapTargets[k] = t; renderLaps(); dirty(); fx.success(); };
+    const la = $('fLapAuto'); if (la) la.onchange = () => { cur.lapAuto = la.checked; if (cur.lapAuto) cur.lapSec = null; dirty(); };
+    sum(); syncLapTarget();
   }
   let hoverX = null;
   function dirty() {
@@ -376,12 +447,18 @@
       built = UL.buildRoute(pts.map(p => ({ lat: p.lat, lon: p.lon, ele: p.ele })), cur.route.name);
       cur.route.distance = built.distance; cur.route.gain = built.gain;
       cur.sectors = UL.autoSplit(1, built.distance);
-      if ((!cur.name || cur.name === 'NEW MISSION') && r.name) { cur.name = r.name.toUpperCase(); $('fName').value = cur.name; }
+      if ((!cur.name || /^NEW (MISSION|RACE|TRAINING)$/.test(cur.name)) && r.name) { cur.name = r.name.toUpperCase(); $('fName').value = cur.name; }
+      cur.lapSec = null;
       $('fGpxBtn').textContent = '⟳ REPLACE GPX FILE';
       closeSecCard(true);
       if (cur.autoT) applyAuto();
       renderRouteInfo(); renderSectors(); drawSetupProfile(); $('hTools').style.display = 'flex'; showRouteOnMap(true); autoInfo(); dirty(); fx.success();
-      UL.toast('ROUTE IMPORTED · ' + (built.distance / 1000).toFixed(1) + ' KM', 'ok');
+      if (isTraining()) {
+        renderLaps();
+        const rt = UL.routeType(built);
+        UL.toast(rt && rt.loop ? 'LOOP DETECTED · A → A · ' + (built.distance / 1000).toFixed(1) + ' KM — set the laps below' : 'POINT-TO-POINT · A → B · ' + (built.distance / 1000).toFixed(1) + ' KM', 'ok', 4500);
+        if (rt && rt.loop && $('lapBox')) setTimeout(() => $('lapBox').scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+      } else UL.toast('ROUTE IMPORTED · ' + (built.distance / 1000).toFixed(1) + ' KM', 'ok');
     } catch (err) { fx.error(); UL.toast('COULD NOT READ GPX: ' + err.message, 'bad'); }
     e.target.value = '';
   }
@@ -463,7 +540,8 @@
     });
     S.forEach((s, i) => {
       const a = UL.routeAt(built, s.start);
-      const m = L.marker([a.lat, a.lon], { icon: UL.cpIcon(s.color, UL.cpLabel(s), { drag: i > 0 }), draggable: i > 0, zIndexOffset: 600, autoPan: true }).addTo(routeGroup);
+      const lbl = i === 0 && !s.cp && isTraining() && cur.loop ? 'START / FINISH' : UL.cpLabel(s);
+      const m = L.marker([a.lat, a.lon], { icon: UL.cpIcon(s.color, lbl, { drag: i > 0 }), draggable: i > 0, zIndexOffset: 600, autoPan: true }).addTo(routeGroup);
       m.on('click', () => cpPopup(i, m));
       if (i > 0) {
         let lastD = s.start;
@@ -474,8 +552,8 @@
         });
       }
     });
-    const e = P[P.length - 1];
-    L.marker([e.lat, e.lon], { icon: UL.cpIcon('#fff', 'FINISH', { finish: true }), zIndexOffset: 500, interactive: false }).addTo(routeGroup);
+    const e = P[P.length - 1], rt = isTraining() ? UL.routeType(built) : null;
+    if (!(rt && rt.loop)) L.marker([e.lat, e.lon], { icon: UL.cpIcon('#fff', 'FINISH', { finish: true }), zIndexOffset: 500, interactive: false }).addTo(routeGroup);   // loops: start = finish
     if (fit) fitRoute();
   }
   function cpPopup(i, m) {
@@ -522,6 +600,7 @@
   /* sector target-times popup */
   function openSectorTargets() {
     if (!built) return UL.toast('IMPORT A GPX FIRST', 'warn');
+    if (hasLaps()) return openLapSectorTargets();
     const S = cur.sectors, dlg = $('dlgSecT');
     const totalOf = () => S.reduce((a, s) => a + (s.target || 0), 0);
     dlg.innerHTML = `<div style="padding:20px"><h3>SECTOR TARGET TIMES</h3>
@@ -565,10 +644,40 @@
     dlg.showModal(); fx.open();
   }
 
+  /* sector target times lap by lap (training profiles with laps) */
+  function openLapSectorTargets() {
+    const S = cur.sectors, n = lapCount(), dlg = $('dlgSecT'); let k = 0, redraw = null;
+    const plan = () => UL.lapPlan(cur, built);
+    const manual = () => { if (cur.lapAuto !== false || !Array.isArray(cur.lapSec) || cur.lapSec.length !== n) { cur.lapSec = plan().map(x => x.sec.slice()); } cur.lapAuto = false; };
+    const draw = () => {
+      const P = plan(), L = P[k];
+      dlg.innerHTML = `<div style="padding:20px;width:min(560px,92vw)"><h3>SECTOR TARGET TIMES · LAPS</h3>
+        <div class="hint" style="margin:8px 0 10px">Each lap has its own sector targets. ${cur.lapAuto !== false ? 'They are split automatically from the lap targets (step 4) — typing a value switches that off.' : 'Set by hand.'}</div>
+        <div class="laptabs">${P.map((x, i) => `<button class="ghost ${i === k ? 'on' : ''}" data-lap="${i}">LAP ${i + 1}${x.target ? ' · ' + UL.hmsStr(x.target) : ''}</button>`).join('')}</div>
+        <div id="stRows">${S.map((s, i) => `<div class="secrow" style="grid-template-columns:14px 1fr 70px 96px">
+          <i style="background:${s.color};width:12px;height:12px;display:block"></i><span style="font-size:11px">${esc(s.name)} <span class="hint">${((s.end - s.start) / 1000).toFixed(2)} km</span></span>
+          <span class="hint" data-sp="${i}" style="text-align:right">${L.sec[i] ? ((s.end - s.start) / L.sec[i] * 3.6).toFixed(1) + ' km/h' : ''}</span>
+          <input data-t="${i}" value="${L.sec[i] ? UL.hmsStr(L.sec[i]) : ''}" placeholder="mm:ss" style="text-align:center"></div>`).join('')}</div>
+        <div class="row" style="margin-top:10px"><span class="hint">LAP ${k + 1} TOTAL</span><b id="stTotal" style="font-size:16px">${L.sec.every(Boolean) ? UL.hmsStr(L.sec.reduce((a, b) => a + b, 0)) : '--'}</b></div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="ghost" id="stCopy" style="font-size:10px">COPY LAP ${k + 1} TO ALL LAPS</button><button class="ghost" id="stRe" style="font-size:10px">RECALCULATE FROM LAP TARGETS</button></div>
+        <div class="row" style="margin-top:14px"><button class="primary" id="stOk" style="flex:1">DONE</button></div></div>`;
+      dlg.querySelectorAll('[data-lap]').forEach(b => b.onclick = () => { k = +b.dataset.lap; draw(); fx.tick(); });
+      dlg.querySelectorAll('[data-t]').forEach(el => el.onchange = () => {
+        manual(); const i = +el.dataset.t; cur.lapSec[k][i] = UL.parseHMS(el.value);
+        const t = cur.lapSec[k]; if (t.every(Boolean)) cur.lapTargets[k] = t.reduce((a, b) => a + b, 0);
+        dirty(); clearTimeout(redraw); redraw = setTimeout(draw, 0);          // not inside the blur that removes the input
+      });
+      $('stCopy').onclick = () => { manual(); const src = cur.lapSec[k].slice(); for (let j = 0; j < n; j++) { cur.lapSec[j] = src.slice(); if (src.every(Boolean)) cur.lapTargets[j] = src.reduce((a, b) => a + b, 0); } dirty(); draw(); fx.success(); };
+      $('stRe').onclick = () => { cur.lapAuto = true; cur.lapSec = null; dirty(); draw(); fx.success(); };
+      $('stOk').onclick = () => { dlg.close(); renderLaps(); renderSectors(); dirty(); fx.close(); };
+    };
+    draw(); dlg.showModal(); fx.open();
+  }
+
   /* ----------------------------------------------------------- actions */
   function save() {
     if (!cur) return false;
-    if (!cur.code || cur.code.length < 4) { UL.toast('MISSION CODE MUST BE 4–8 CHARACTERS', 'warn'); fx.error(); return false; }
+    if (!cur.code || cur.code.length < 4) { UL.toast('CODE MUST BE 4–8 CHARACTERS', 'warn'); fx.error(); return false; }
     if (profiles.some(p => p.id !== cur.id && p.code === cur.code)) { UL.toast('ANOTHER PROFILE ALREADY USES THIS CODE', 'warn'); fx.error(); return false; }
     cur.updated = Date.now();
     if (cur.escort) localStorage.ulEscortCall = cur.escort;
@@ -582,7 +691,7 @@
   $('dDel').onclick = () => cur && deleteProfile(cur.id);
   $('dExport').onclick = () => {
     if (!cur) return;
-    UL.saveFile('ultralink-' + (cur.name || 'mission').replace(/[^A-Z0-9]+/gi, '_') + '.json', JSON.stringify(cur, null, 1), 'application/json');
+    UL.saveFile('ultralink-' + (cur.name || 'profile').replace(/[^A-Z0-9]+/gi, '_') + '.json', JSON.stringify(cur, null, 1), 'application/json');
   };
   $('pImport').onclick = () => $('impFile').click();
   $('impFile').onchange = async e => {
@@ -599,6 +708,7 @@
     if (!built) { fx.error(); return UL.toast('IMPORT A GPX ROUTE FIRST', 'warn'); }
     if (!cur.escort.trim()) { fx.error(); $('fEsc').focus(); return UL.toast('ENTER YOUR ESCORT CALLSIGN', 'warn'); }
     if (!save()) return;
+    if (hasLaps() && !lapTotal()) UL.toast('SOME LAPS HAVE NO TARGET TIME — they run without one', 'warn', 3500);
     let startAt = startMs(cur); if (startAt && startAt < Date.now() + 2000) startAt = null;
     fx.go();
     Plan.onLaunch && Plan.onLaunch({ profile: JSON.parse(JSON.stringify(cur)), route: built, startAt });
@@ -613,14 +723,15 @@
   };
   $('hSet').onclick = () => { $('dlgSet').showModal(); fx.open(); };
   $('hHelp').onclick = () => {
-    $('dlgHelp').innerHTML = `<div style="padding:20px"><h3>PLANNING A MISSION</h3><ol style="font-size:12px;line-height:1.95;padding-left:18px;margin:12px 0">
-      <li>Press <b>＋ NEW MISSION PROFILE</b>. Selecting a profile flies the earth view down to its route.</li>
-      <li>Fill in the name, mission code and your escort callsign.</li>
+    $('dlgHelp').innerHTML = `<div style="padding:20px"><h3>RACE &amp; TRAINING PROFILES</h3><ol style="font-size:12px;line-height:1.95;padding-left:18px;margin:12px 0">
+      <li>Choose the <b>RACE</b> or <b>TRAINING</b> tab and press <b>＋ NEW … PROFILE</b>. Selecting a profile flies the earth view down to its route.</li>
+      <li>Fill in the name, code and your escort callsign.</li>
       <li>Set the <b>date and departure time</b> and an <b>overall target time</b>. Tick <b>AUTO-CALCULATE</b> to split it into sector targets.</li>
       <li><b>Import the GPX</b> route, then press <b>✚ ADD CHECKPOINT</b> on the map and click on the route to cut it into sectors. Drag the dots to move them, click a dot to give it a designation.</li>
       <li>With <b>◎ SELECT SECTOR</b>, click a sector: the map zooms onto it and its gradient/elevation card opens, where you can write notes for the team.</li>
+      <li><b>Training profiles:</b> after the GPX import ULTRALINK shows whether the route is <b>A → B</b> or a loop <b>A → A</b>. For a loop, tick <b>THIS TRAINING INVOLVES LAPS</b>, set the number of laps and a target time per lap. Sector times and targets are then kept lap by lap.</li>
       <li>Add rider codenames, pick a <b>★ lead rider</b>, press <b>SAVE</b>. Profiles stay on this device; use EXPORT to back them up.</li>
-      <li>When ready, press <b>▶ ACTIVATE MISSION</b>. Riders join with the code; the mission clock starts by itself at the departure time.</li></ol>
+      <li>When ready, press <b>▶ ENTER PROFILE</b>. Riders join with the code; the clock starts by itself at the departure time.</li></ol>
       <button class="primary" style="margin-top:6px" onclick="this.closest('dialog').close()">GOT IT</button></div>`;
     $('dlgHelp').showModal(); fx.open();
   };
@@ -632,6 +743,7 @@
       $('home').style.display = 'block';
       if (!hmap) initHomeMap(); else setTimeout(() => hmap.invalidateSize(), 50);
       UL.widget($('profPanel'), { key: 'profiles', head: '.hh' });
+      setTab(tab);
       UL.widget($('detPanel'), { key: 'details', head: '.hh', before: '#dClose' });
       renderList();
       fetch('health').then(() => { $('hRelay').textContent = 'RELAY ONLINE'; $('hRelay').className = 'tag ok'; }).catch(() => { $('hRelay').textContent = 'RELAY OFFLINE'; $('hRelay').className = 'tag bad'; });
@@ -641,6 +753,6 @@
     joinError(m) { $('jerr').textContent = m; },
     closeJoin() { $('dlgJoin').close(); },
     profiles: () => profiles,
-    _debug: { get cur() { return cur; }, get built() { return built; }, openSecCard, setTool, get secIdx() { return secIdx; } }
+    _debug: { setTab, renderLaps, get cur() { return cur; }, get built() { return built; }, openSecCard, setTool, get secIdx() { return secIdx; } }
   };
 })();

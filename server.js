@@ -195,6 +195,7 @@ function handle(c, m) {
         code, name: m.name || 'UNNAMED OP', createdAt: prev.createdAt || Date.now(),
         route: m.route || [], riders: m.riders || [], distance: m.distance || 0,
         sectors: m.sectors || [], startAt: m.startAt || null, targetSec: m.targetSec || prev.targetSec || null, lead: m.lead || prev.lead || null,
+        kind: m.kind === 'training' ? 'training' : 'race', laps: Math.max(1, Math.min(50, m.laps | 0 || 1)), lapLen: m.lapLen || 0, lapTargets: Array.isArray(m.lapTargets) ? m.lapTargets : [],
         autoStarted: prev.autoStarted && m.startAt === prev.startAt
       });
       if (m.restore) {               // an escort re-creating the mission after a relay restart
@@ -237,17 +238,28 @@ function handle(c, m) {
       peers(code, null).forEach(p => { p.mission = null; });
       break;
     }
+    case 'channel.create': {     // COMMS MODE: open intercom channel, numeric Channel ID, no telemetry / location
+      let id = /^\d{6}$/.test(String(m.id || '')) && !missions[m.id] ? String(m.id) : null;   // restore: same ID after a relay restart
+      while (!id || missions[id]) id = String(100000 + crypto.randomInt(900000));
+      missions[id] = { code: id, kind: 'comms', name: 'CHANNEL ' + id, createdAt: Date.now(), lastSeen: Date.now(), by: String(m.callsign || '').toUpperCase().slice(0, 24) };
+      persist();
+      c.send({ t: 'channel.created', id });
+      break;
+    }
     case 'join': {
-      const code = (m.code || '').toUpperCase();
+      const code = (m.code || '').toUpperCase().trim();
       const mis = missions[code];
-      if (!mis) return c.send({ t: 'error', code: 'NO_MISSION', msg: 'Mission code not found' });
+      const wantUnit = m.role === 'unit';
+      if (wantUnit && (!mis || mis.kind !== 'comms')) return c.send({ t: 'error', code: 'NO_CHANNEL', msg: 'Channel ID not found' });
+      if (!mis || (!wantUnit && mis.kind === 'comms')) return c.send({ t: 'error', code: 'NO_MISSION', msg: 'Mission code not found' });
+      if (mis.kind === 'comms') mis.lastSeen = Date.now();
       /* same device reconnecting: keep its id so peers keep their voice link and card */
       if (typeof m.resume === 'string' && /^[0-9a-f-]{36}$/i.test(m.resume) && m.resume !== c.id) {
         const old = [...clients].find(x => x !== c && x.id === m.resume);
         if (old) { old.replaced = true; old.close(); }
         c.id = m.resume;
       }
-      c.mission = code; c.role = m.role === 'escort' ? 'escort' : 'rider';
+      c.mission = code; c.role = mis.kind === 'comms' ? 'unit' : m.role === 'escort' ? 'escort' : 'rider';
       c.callsign = String(m.callsign || 'UNKNOWN').toUpperCase().slice(0, 24);
       c.color = m.color || colorFor(mis, c.callsign);
       c.send({ t: 'joined', id: c.id, mission: mis, color: c.color });
@@ -255,7 +267,7 @@ function handle(c, m) {
       break;
     }
     case 'telemetry': {
-      if (!c.mission) return;
+      if (!c.mission || c.role === 'unit') return;          // comms channels carry no telemetry / location
       c.telemetry = m.data; c.telAt = Date.now();
       broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data, fresh: m.fresh || undefined }, c);
       break;
@@ -279,11 +291,17 @@ function handle(c, m) {
       break;
     }
     case 'gps.refresh': {      // escort asks every unit for a fresh GPS fix; answer at once with the last known positions
-      if (!c.mission) return;
+      if (!c.mission || c.role === 'unit') return;
       const rid = String(m.rid || Date.now());
       broadcast(c.mission, { t: 'gps.refresh', from: c.id, callsign: c.callsign, rid, ts: Date.now() }, c);
       c.send({ t: 'gps.snapshot', rid, ts: Date.now(),
         units: peers(c.mission, c).map(p => ({ id: p.id, role: p.role, callsign: p.callsign, color: p.color, data: p.telemetry, at: p.telAt || null })) });
+      break;
+    }
+    case 'leave': {            // comms unit leaves its channel
+      const code = c.mission; if (!code) return;
+      c.mission = null; if (missions[code] && missions[code].kind === 'comms') missions[code].lastSeen = Date.now();
+      broadcastRoster(code);
       break;
     }
     case 'ptt.relay': c.relay = Array.isArray(m.relay) ? m.relay : null; break;
@@ -314,11 +332,17 @@ function genCode() {
   return Array.from({ length: 6 }, () => A[Math.floor(Math.random() * A.length)]).join('');
 }
 
-/* scheduled departure: start the mission clock automatically at startAt */
+/* scheduled departure: start the mission clock automatically at startAt.
+   Comms channels close by themselves 30 min after the last unit left. */
 setInterval(() => {
   const now = Date.now();
   for (const code of Object.keys(missions)) {
     const mis = missions[code];
+    if (mis.kind === 'comms') {
+      if (peers(code, null).length) mis.lastSeen = now;
+      else if (now - (mis.lastSeen || mis.createdAt || 0) > 30 * 60e3) { delete missions[code]; persist(); }
+      continue;
+    }
     if (mis.startAt && !mis.autoStarted && !mis.clockStart && now >= mis.startAt) {
       mis.autoStarted = true; mis.clockStart = now; mis.clockStop = null;
       persist();

@@ -85,6 +85,7 @@
     const P = route.points; if (!P || !P.length) return null;
     if (P.length === 1) return { idx: 0, point: P[0], covered: 0, remaining: route.distance, offRoute: haversine(P[0], pos), ele: P[0].ele, grade: P[0].grade, lat: P[0].lat, lon: P[0].lon };
     const kx = 111320 * Math.cos(pos.lat * Math.PI / 180), ky = 110540;
+    const pref = lastIdx;
     const search = (from, to) => {
       let best = null;
       for (let i = Math.max(1, from); i <= to; i++) {
@@ -92,7 +93,8 @@
         const ax = (A.lon - pos.lon) * kx, ay = (A.lat - pos.lat) * ky, dx = (B.lon - A.lon) * kx, dy = (B.lat - A.lat) * ky, L2 = dx * dx + dy * dy;
         let t = L2 ? -(ax * dx + ay * dy) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
         const ox = ax + dx * t, oy = ay + dy * t, off = Math.sqrt(ox * ox + oy * oy);
-        if (!best || off < best.off) best = { i, t, off };
+        /* lap routes repeat the same road: equal distance → keep the copy nearest the last position */
+        if (!best || off < best.off - 0.5 || (pref != null && off <= best.off + 0.5 && Math.abs(i - pref) < Math.abs(best.i - pref))) best = { i, t, off };
       }
       return best;
     };

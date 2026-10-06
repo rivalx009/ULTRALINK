@@ -40,7 +40,7 @@
 
   async function deploy() {
     const code = $('code').value.trim().toUpperCase(), cs = $('callsign').value.trim().toUpperCase();
-    if (code.length < 4 || !cs) return fail('MISSION CODE AND CALLSIGN REQUIRED');
+    if (code.length < 4 || !cs) return fail('CODE AND CALLSIGN REQUIRED');
     localStorage.ulCode = code; localStorage.ulCallsign = cs;
     $('go').textContent = 'LINKING…';
     try {
@@ -150,6 +150,7 @@
   function applyRoute() {
     if (mission && mission.route && mission.route.length) {
       tel.setRoute(UL.buildRoute(mission.route.map(p => ({ lat: p[0], lon: p[1], ele: p[2] || 0 }))));
+      if (mission.laps > 1) { try { const k = +sessionStorage['ulIdx:' + mission.code]; if (k >= 0) tel.lastIdx = k; } catch (e) {} }   // lap routes: resume on the right lap after a reload
       drawProfile();
     }
   }
@@ -236,6 +237,7 @@
   /* ---------------------------------------------------------- telemetry  */
   let lastTx = 0;
   tel.addEventListener('update', e => {
+    if (mission && mission.laps > 1 && tel.lastIdx != null) { try { sessionStorage['ulIdx:' + mission.code] = tel.lastIdx; } catch (x) {} }
     const s = e.detail;
     $('spd').innerHTML = cfg.speed(s.speed).toFixed(1) + '<span style="font-size:15px;letter-spacing:.2em"> ' + cfg.speedU() + '</span>';
     $('cov').textContent = cfg.dist(s.covered).toFixed(2);

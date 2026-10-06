@@ -1,0 +1,86 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>ULTRALINK · COMMS</title><link rel="stylesheet" href="ul.css"><link rel="icon" href="icon.svg"><link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#05080a"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  body{overflow:auto;overscroll-behavior:none}
+  #start{overflow:auto;justify-content:flex-start;padding-top:max(6vh,env(safe-area-inset-top))}
+  .cbtn{width:100%;padding:18px;font-size:15px}
+  #joinBox{display:none;margin-top:10px}
+  #joinBox.show{display:block}
+  #chId{width:100%;text-align:center;font-size:30px;letter-spacing:.35em}
+  #app{display:none;flex-direction:column;height:100dvh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  @media (min-width:700px){ #app{max-width:600px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)} }
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:10px;letter-spacing:.18em;color:var(--dim)}
+  .bar .wm{font-size:15px;color:var(--fg)}
+  .chan{text-align:center;padding:16px 14px 12px;border-bottom:1px solid var(--line)}
+  .chan .k{font-size:9px;letter-spacing:.32em;color:var(--dim)}
+  .chan .id{font-size:clamp(40px,13vw,60px);font-weight:600;letter-spacing:.16em;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1.15;margin:4px 0 8px;text-shadow:0 0 18px rgba(0,229,255,.3)}
+  .chan .row{justify-content:center;gap:8px}
+  .chan button{padding:7px 12px;font-size:10px}
+  .uhd{display:flex;align-items:center;padding:8px 14px;font-size:9px;letter-spacing:.28em;color:var(--dim)}
+  #units{padding:0 14px;display:flex;flex-direction:column;gap:6px;overflow:auto;max-height:34vh}
+  .unit{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);background:var(--bg2);font-size:12px;letter-spacing:.16em;transition:.15s}
+  .unit i{width:10px;height:10px;border-radius:50%;flex:none}
+  .unit .st{margin-left:auto;font-size:9px;color:var(--dim);letter-spacing:.16em}
+  .unit.tx{border-color:var(--good);box-shadow:0 0 14px rgba(124,255,90,.25) inset}
+  .unit.tx .st{color:var(--good)}
+  #clog{margin:8px 14px 0;font-size:10px;letter-spacing:.08em;color:var(--dim);max-height:16vh;overflow:auto;line-height:1.7}
+  #rx{margin:0 14px;padding:8px 14px;border:1px solid var(--good);background:#04150a;color:var(--good);font-size:12px;letter-spacing:.22em;display:none;text-align:center}
+  #ptt{margin:10px 14px 10px;height:150px;border-radius:8px;border:2px solid var(--line2);background:radial-gradient(circle at 50% 35%,#0d2c36,#06151a);
+       font-size:18px;letter-spacing:.3em;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;touch-action:none;user-select:none;-webkit-user-select:none}
+  #ptt.live{border-color:var(--bad);background:radial-gradient(circle at 50% 35%,#4a1220,#1a0509);color:#ffd7de;box-shadow:0 0 40px rgba(255,77,109,.45)}
+  @media (max-height:640px){#ptt{height:110px}}
+  .foot{display:flex;gap:8px;padding:0 14px 12px}
+  .foot button{flex:1;padding:11px;font-size:10px}
+  #latch.on{border-color:var(--warn);color:var(--warn)}
+  #tapAudio{position:fixed;left:50%;bottom:190px;transform:translateX(-50%);z-index:60;display:none;padding:12px 18px;background:var(--warn);color:#000;border:0;font-weight:700;letter-spacing:.16em}
+  #tapAudio.show{display:block}
+  #toasts{bottom:auto!important;top:calc(52px + env(safe-area-inset-top))!important}
+  .keyhint{display:none} @media (hover:hover) and (pointer:fine){ .keyhint{display:inline} }
+  body.light .chan .id{text-shadow:none}
+  body.light #ptt{background:radial-gradient(circle at 50% 35%,#f4f5f6,#d9dde0);color:var(--fg)}
+  body.light #ptt.live{background:radial-gradient(circle at 50% 35%,#f6d5da,#e7aab4);color:#5a0d1a}
+  body.light #rx{background:#eef6ea}
+  body.light .unit.tx{box-shadow:0 0 0 1px var(--good) inset}
+</style></head><body class="scan">
+<script src="ul.js"></script><script src="ul-settings.js"></script><script>try{new UL.Settings().apply()}catch(e){}</script>
+
+<div class="center" id="start">
+  <div style="text-align:center"><div class="brandicon" style="width:52px;height:52px;margin:0 auto 14px;display:block"></div>
+    <div class="logo" style="font-size:22px"><span class="wm" role="img" aria-label="ULTRALINK"></span></div>
+    <div class="sub" style="margin-top:8px">COMMS MODE · OPEN-LINE INTERCOM</div></div>
+  <div class="panel corner" style="width:min(420px,94vw);padding:20px">
+    <label>Your callsign</label>
+    <input id="call" placeholder="e.g. UNIT-1" maxlength="24" style="width:100%;text-transform:uppercase">
+    <div class="muted" style="font-size:10px;margin:6px 0 16px">Every device is a single unit — no riders or escorts, no telemetry and no location. Just push to talk.</div>
+    <button id="create" class="primary cbtn">＋ CREATE CHANNEL</button>
+    <div style="height:10px"></div>
+    <button id="joinT" class="cbtn">⇢ JOIN EXISTING CHANNEL</button>
+    <div id="joinBox">
+      <label>Channel ID</label>
+      <input id="chId" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="000000" autocomplete="off">
+      <button id="join" class="primary" style="width:100%;padding:14px;margin-top:10px">JOIN CHANNEL</button>
+    </div>
+    <div id="err" style="color:var(--bad);font-size:11px;margin-top:10px;min-height:14px"></div>
+  </div>
+  <div class="sub"><a href="index.html" style="color:var(--dim)">← MODE SELECT</a></div>
+</div>
+
+<div id="app">
+  <div class="bar"><span class="dot" id="lnk"></span><span class="wm" role="img" aria-label="ULTRALINK"></span><span>COMMS</span><span class="sp"></span>
+    <span id="me" style="color:var(--accent)">—</span><span class="tag" id="vmode">VOICE --</span></div>
+  <div class="chan"><div class="k">CHANNEL ID</div><div class="id" id="cid">------</div>
+    <div class="row"><button class="ghost" id="copy">⧉ COPY ID</button><button class="ghost" id="share">⇪ SHARE</button></div>
+    <div class="muted" style="font-size:10px;margin-top:8px">Other units: COMMS MODE → JOIN EXISTING CHANNEL → type this number.</div></div>
+  <div class="uhd">UNITS ON CHANNEL<span class="sp"></span><span class="tag" id="ucount">1</span></div>
+  <div id="units"></div>
+  <div id="clog"></div>
+  <div style="flex:1"></div>
+  <div id="rx"></div>
+  <button id="tapAudio">🔊 TAP TO ENABLE AUDIO</button>
+  <button id="ptt">PUSH TO TALK<span class="muted" style="font-size:9px;letter-spacing:.2em">HOLD<span class="keyhint"> · OR HOLD SPACE</span> · OR BT REMOTE BUTTON</span></button>
+  <div class="foot"><button class="ghost" id="latch" title="Tap once to open the line, tap again to close it">◎ HANDS-FREE: OFF</button><button class="ghost danger" id="leave">LEAVE CHANNEL</button></div>
+</div>
+
+<script src="ul-fx.js"></script><script src="ul-ui.js"></script><script src="comms.js"></script></body></html>
