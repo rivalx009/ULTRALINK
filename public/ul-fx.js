@@ -1,4 +1,4 @@
-/* ULTRALINK — synthesized sound effects (no audio files). F1-style radio keying + UI feedback. */
+/* ULTRALINK — synthesized sound effects (+ radio-open.mp3 for the line-open sound). F1-style radio keying + UI feedback. */
 (function (global) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null;
@@ -17,6 +17,7 @@
       noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      loadClip();
     }
     if (ctx.state === 'suspended' && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) ctx.resume().catch(() => {});
     return ctx;
@@ -39,6 +40,19 @@
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(g); g.connect(master);
     osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
+  /* line-open sound: radio-open.mp3, decoded once into the shared audio context */
+  let clip = null, clipLoading = false;
+  function loadClip() {
+    if (clip || clipLoading || !ctx) return; clipLoading = true;
+    fetch('radio-open.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(b => new Promise((ok, no) => ctx.decodeAudioData(b, ok, no)))
+      .then(buf => { clip = buf; }).catch(() => { clipLoading = false; });
+  }
+  function playClip(fallback) {
+    const c = ensure(); if (!c) return;
+    if (!clip) { loadClip(); return fallback(); }   // not loaded yet: use the old beep this once
+    const src = c.createBufferSource(); src.buffer = clip; src.connect(master); src.start();
   }
   function noise(dur, o) {
     const c = ensure(); if (!c) return;
@@ -76,10 +90,10 @@
     save() { if (!S.ui) return; tone(1040, 0.05, { type: 'triangle', gain: 0.14 }); tone(1560, 0.05, { type: 'triangle', gain: 0.14, at: 0.06 }); tone(2080, 0.1, { type: 'triangle', gain: 0.12, at: 0.12 }); },
     remove() { if (!S.ui) return; tone(600, 0.1, { to: 200, type: 'sawtooth', gain: 0.1 }); noise(0.1, { freq: 900, gain: 0.08, at: 0.02 }); },
 
-    /* ---- radio: short key beep, soft squelch tail ---- */
-    pttOpen() { tone(1250, 0.05, { type: 'sine', gain: 0.1 }); tone(1250, 0.05, { type: 'sine', gain: 0.1, at: 0.08 }); },
+    /* ---- radio: line open = radio-open.mp3, soft squelch tail on close ---- */
+    pttOpen() { playClip(() => { tone(1250, 0.05, { type: 'sine', gain: 0.1 }); tone(1250, 0.05, { type: 'sine', gain: 0.1, at: 0.08 }); }); },
     pttClose() { noise(0.08, { freq: 2600, to: 1000, q: 0.8, gain: 0.08, attack: 0 }); tone(880, 0.05, { type: 'sine', gain: 0.08, at: 0.03 }); },
-    rxOpen() { tone(1050, 0.05, { type: 'sine', gain: 0.09 }); },
+    rxOpen() { playClip(() => tone(1050, 0.05, { type: 'sine', gain: 0.09 })); },
     rxClose() { noise(0.07, { freq: 2400, to: 900, q: 0.8, gain: 0.07, attack: 0 }); },
 
     /* ---- mission ---- */
