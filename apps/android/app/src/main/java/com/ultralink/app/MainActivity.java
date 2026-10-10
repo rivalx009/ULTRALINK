@@ -51,7 +51,9 @@ import java.util.Locale;
  * JS bridge "UltraApp" (same API as v1.4, so the web pages keep working):
  *   getServer() setServer(url) resetServer() retry(url) startTracking(code, callsign) stopTracking()
  *   setTalking(on) requestFix() saveFile(name, text, mime)
+ *   v1.7: startRadio(wsUrl, code, unitId, callsign) radioPtt(on) radioToggle() radioState()  — native radio
  * Native → page: window.ULNative.onPos(lat, lon, acc, spd, hdg, alt, ts) / onGpsError(msg) / ptt(on) / togglePtt() / resume()
+ *   / radioState(state, transmitting)
  */
 public class MainActivity extends Activity {
     static final String PREFS = "ultralink", KEY_SERVER = "server";
@@ -70,7 +72,7 @@ public class MainActivity extends Activity {
 
     private final BroadcastReceiver actions = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
-            if (ACTION_TALK.equals(i.getAction())) js("window.ULNative&&ULNative.togglePtt()");
+            if (ACTION_TALK.equals(i.getAction())) { if (UltraService.radioOn()) UltraService.radioToggle(); else js("window.ULNative&&ULNative.togglePtt()"); }
             else if (ACTION_STOP.equals(i.getAction())) { stopService(new Intent(MainActivity.this, UltraService.class)); }
         }
     };
@@ -224,6 +226,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void setTalking(boolean on) { UltraService.talking(on); }
         @JavascriptInterface public void requestFix() { UltraService.requestFix(); }
         @JavascriptInterface public void saveFile(String name, String text, String mime) { save(name, text, mime); }
+        /* v1.7 native radio (rider mode): voice runs in UltraService, not in the page */
+        @JavascriptInterface public void startRadio(String wsUrl, String code, String unitId, String callsign) {
+            String u = wsUrl == null ? "" : wsUrl.trim();
+            if (!u.matches("(?i)^wss?://.*")) return;
+            UltraService.startRadio(u, code, unitId, callsign);
+        }
+        @JavascriptInterface public void radioPtt(boolean on) { UltraService.radioPtt(on); }
+        @JavascriptInterface public void radioToggle() { UltraService.radioToggle(); }
+        @JavascriptInterface public String radioState() { return UltraService.radioStatus(); }
     }
 
     /** exported profiles go to Downloads */
@@ -258,7 +269,10 @@ public class MainActivity extends Activity {
     /* Bluetooth / headset media button toggles PTT while the app is open */
     @Override public boolean onKeyDown(int code, KeyEvent e) {
         if (code == KeyEvent.KEYCODE_BACK && web.canGoBack()) { web.goBack(); return true; }
-        if ((code == KeyEvent.KEYCODE_HEADSETHOOK || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) && e.getRepeatCount() == 0) { js("window.ULNative&&ULNative.togglePtt()"); return true; }
+        if ((code == KeyEvent.KEYCODE_HEADSETHOOK || code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) && e.getRepeatCount() == 0) {
+            if (UltraService.radioOn()) UltraService.radioToggle(); else js("window.ULNative&&ULNative.togglePtt()");
+            return true;
+        }
         return super.onKeyDown(code, e);
     }
     @Override protected void onResume() { super.onResume(); current = this; web.onResume(); js("window.ULNative&&ULNative.resume&&ULNative.resume()"); }

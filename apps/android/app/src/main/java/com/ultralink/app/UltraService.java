@@ -22,10 +22,11 @@ import android.view.KeyEvent;
 
 /**
  * Foreground service for rider mode: native GPS (1 Hz) that keeps running with the screen off,
- * a partial wake lock, a notification with TALK / STOP TRACKING, and a media session so a Bluetooth
- * headset / handlebar remote button toggles push-to-talk.
+ * a partial wake lock, a notification with TALK / STOP TRACKING, a media session so a Bluetooth
+ * headset / handlebar remote button toggles push-to-talk, and (v1.7) the native radio (Radio.java),
+ * which carries the rider's voice without the WebView, so PTT keeps working with the screen off.
  */
-public class UltraService extends Service implements LocationListener {
+public class UltraService extends Service implements LocationListener, Radio.Host {
     private static final String CH = "ultralink_track";
     private static final int NID = 15;
     static UltraService self;
@@ -34,6 +35,9 @@ public class UltraService extends Service implements LocationListener {
     private MediaSession ms;
     private String code = "", callsign = "";
     private boolean talking = false;
+    private Radio radio;
+    /* radio settings from the page (may arrive before the service has started) */
+    private static volatile String rUrl, rCode, rUnit, rCall;
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -47,6 +51,7 @@ public class UltraService extends Service implements LocationListener {
         if (wl == null) { PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE); wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ultralink:track"); wl.setReferenceCounted(false); wl.acquire(); }
         startGps();
         startMediaButtons();
+        applyRadio();
         return START_STICKY;
     }
     private static String nz(String s) { return s == null ? "" : s; }
@@ -122,6 +127,7 @@ public class UltraService extends Service implements LocationListener {
             @Override public boolean onMediaButtonEvent(Intent i) {
                 KeyEvent e = i.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
                 if (e != null && e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    if (radio != null && radio.active()) { radio.toggle(); return true; }   // native radio: works with the screen off
                     MainActivity a = MainActivity.current; if (a != null) a.js("window.ULNative&&ULNative.togglePtt()");
                     return true;
                 }
@@ -132,7 +138,33 @@ public class UltraService extends Service implements LocationListener {
             .setState(PlaybackState.STATE_PLAYING, 0, 1f).build());
         ms.setActive(true);
     }
+    /* ------------------------------------------------------------------ native radio */
+    static void startRadio(String url, String code, String unit, String callsign) {
+        rUrl = url; rCode = code; rUnit = unit; rCall = callsign;
+        UltraService s = self; if (s != null) s.ui.post(s::applyRadio);
+    }
+    private final android.os.Handler ui = new android.os.Handler(Looper.getMainLooper());
+    private void applyRadio() {
+        if (rUnit == null || rUnit.isEmpty()) return;
+        if (radio == null || radio.isStopped()) radio = new Radio(this, this);   // a new mission after the last one ended
+        radio.configure(rUrl, rCode, rUnit, rCall);
+    }
+    /** true when PTT should go to the native radio instead of the web page */
+    static boolean radioOn() { UltraService s = self; return s != null && s.radio != null && s.radio.active(); }
+    static void radioPtt(boolean on) { UltraService s = self; if (s != null && s.radio != null) s.radio.ptt(on); }
+    static void radioToggle() { UltraService s = self; if (s != null && s.radio != null) s.radio.toggle(); }
+    static String radioStatus() { UltraService s = self; return s == null || s.radio == null ? Radio.OFF : s.radio.state(); }
+    @Override public void onRadioState(String state, boolean tx) {
+        ui.post(() -> {
+            if (tx != talking) talking(tx);
+            MainActivity a = MainActivity.current;
+            if (a != null) a.js("window.ULNative&&ULNative.radioState&&ULNative.radioState(" + MainActivity.quote(state) + "," + tx + ")");
+        });
+    }
+
     @Override public void onDestroy() {
+        if (radio != null) { radio.stop(); radio = null; }
+        rUnit = null;
         if (lm != null) lm.removeUpdates(this);
         if (wl != null && wl.isHeld()) wl.release();
         if (ms != null) { ms.setActive(false); ms.release(); ms = null; }

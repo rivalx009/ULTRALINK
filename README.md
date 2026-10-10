@@ -1,4 +1,12 @@
-# ULTRALINK — cycling telemetry & comms  (v1.6)
+# ULTRALINK — cycling telemetry & comms  (v1.7)
+
+**New in v1.7 — native radio in the Android app (rider mode)**
+- Push-to-talk now runs inside the app's background service instead of the web page, so the radio keeps working with the **screen off and battery saver on** (fixes PTT going silent until the app was reopened).
+- The app opens its own audio-only link to the relay for the rider's unit (it never shows as an extra unit). Voice uses the existing relay format (12 kHz mu-law), so escorts need no update.
+- Bluetooth / headset button, the notification TALK button and the on-screen PTT all key the native radio. Line-open sound = `radio_open.mp3`; if the radio is not linked when you press, you hear an error tone + double vibration.
+- Rider screen voice tag shows **RADIO READY / LINKING / WAITING / MIC ERROR**.
+- Older apps, iPhone and browser riders keep the previous web radio (WebRTC + relay).
+
 
 **New in v1.6**
 - **Race profiles** (formerly mission profiles) and the new **Training profiles** — two tabs in the planning panel. *Activate mission* is now **▶ ENTER PROFILE**.

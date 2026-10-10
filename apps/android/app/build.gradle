@@ -7,8 +7,8 @@ android {
         applicationId 'com.ultralink.app'
         minSdk 24
         targetSdk 34
-        versionCode 15
-        versionName '1.5.0'
+        versionCode 17
+        versionName '1.7.0'
     }
     /* release signing from environment / GitHub secrets: ULTRALINK_KEYSTORE (path), ULTRALINK_KEYSTORE_PASSWORD, ULTRALINK_KEY_ALIAS, ULTRALINK_KEY_PASSWORD */
     signingConfigs {

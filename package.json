@@ -1,6 +1,6 @@
 {
   "name": "ultralink",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Tactical cycling telemetry, tracking and PTT comms network (rider + escort modes) for Windows, macOS, Android and iOS browsers",
   "main": "server.js",
   "scripts": {

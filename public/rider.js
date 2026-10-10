@@ -11,12 +11,16 @@
   /* Android app (UltraApp bridge): native GPS + foreground service keep tracking and radio alive with the screen off */
   const SHELL = window.UltraApp || null;                               // desktop or Android app shell
   const APP = SHELL && typeof SHELL.startTracking === 'function' ? SHELL : null;   // only the Android app has native background tracking
+  /* Android app v1.7+: the radio runs natively in the background service (keeps working with the screen off).
+     Older apps and browsers keep the web radio (WebRTC + relay). */
+  const NATIVE_RADIO = !!(APP && typeof APP.startRadio === 'function');
   window.ULNative = {
     onPos(lat, lon, acc, spd, hdg, alt, ts) { tel.onPosition({ coords: { latitude: lat, longitude: lon, accuracy: acc, speed: spd < 0 ? null : spd, heading: hdg < 0 ? null : hdg, altitude: alt }, timestamp: ts || Date.now() }); },
     onGpsError(msg) { $('acc').textContent = 'GPS ' + msg; $('acc').className = 'tag bad'; },
     ptt(on) { on ? open() : shut(); },
-    togglePtt() { live ? shut() : open(); },
-    resume() { recoverAll(); }
+    togglePtt() { if (NATIVE_RADIO) app('radioToggle'); else live ? shut() : open(); },
+    resume() { recoverAll(); },
+    radioState(state, tx) { radioUi(state, tx); }
   };
   const app = (fn, ...a) => { try { APP && APP[fn] && APP[fn](...a); } catch (e) {} };
 
@@ -71,7 +75,7 @@
   });
   link.on('ptt', m => {
     const el = $('rx');
-    if (m.state === 'start') fx.rxOpen(); else fx.rxClose();
+    if (!NATIVE_RADIO) { if (m.state === 'start') fx.rxOpen(); else fx.rxClose(); }   // native radio plays its own sounds
     if (m.state === 'start') { el.textContent = '◉ ' + m.callsign; el.style.display = 'block'; el.style.borderColor = m.color; el.style.color = m.color; }
     else el.style.display = 'none';
   });
@@ -135,6 +139,7 @@
     me = m.id; mission = m.mission; clearTimeout(retryT);
     try { sessionStorage['ulRid:' + mission.code] = me; } catch (e) {}
     if (voice) { voice.selfId = me; voice.sync(roster.map(u => u.id)); }
+    if (started && NATIVE_RADIO) startNativeRadio();
     $('login').style.display = 'none'; $('app').style.display = 'flex';
     $('mis').textContent = mission.code + ' · ' + mission.name;
     $('cs').textContent = localStorage.ulCallsign;
@@ -292,7 +297,23 @@
   addEventListener('resize', drawProfile);
 
   /* --------------------------------------------------------------- PTT   */
+  function wsUrl() { return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host; }
+  function startNativeRadio() { app('startRadio', wsUrl(), mission.code, me, localStorage.ulCallsign || ''); }
+  /* native radio status → PTT button + voice tag (also called when the Bluetooth button keys the radio) */
+  function radioUi(state, tx) {
+    live = !!tx;
+    btn.classList.toggle('live', live);
+    btn.firstChild.textContent = live ? '◉ TRANSMITTING' : 'PUSH TO TALK';
+    $('vmode').textContent = 'RADIO ' + (state || '--');
+    $('vmode').className = 'tag ' + (state === 'READY' ? 'ok' : state === 'LINKING' || state === 'WAITING' ? '' : 'bad');
+  }
   function startVoice() {
+    if (NATIVE_RADIO) {                  // no WebRTC / web mic in the page: the app's radio does it
+      startNativeRadio();
+      let st = 'LINKING'; try { st = APP.radioState() || st; } catch (e) {}
+      radioUi(st, false);
+      return;
+    }
     voice = new UL.VoiceNet(link, { mode: localStorage.ulVoice === 'relay' ? 'relay' : 'auto' });
     voice.selfId = me;
     voice.on('blocked', () => $('tapAudio').classList.add('show'));
@@ -309,15 +330,15 @@
   const btn = $('ptt');
   let live = false;
   /* voice.transmit() sends the PTT banner and opens the mic just after the key beep; release() closes both */
-  const open = () => { if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); app('setTalking', true); };
-  const shut = () => { if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = 'PUSH TO TALK'; app('setTalking', false); };
+  const open = () => { if (NATIVE_RADIO) return app('radioPtt', true); if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); app('setTalking', true); };
+  const shut = () => { if (NATIVE_RADIO) return app('radioPtt', false); if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = 'PUSH TO TALK'; app('setTalking', false); };
   btn.addEventListener('pointerdown', e => { e.preventDefault(); try { btn.setPointerCapture(e.pointerId); } catch (x) {} open(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, shut));
   btn.oncontextmenu = e => e.preventDefault();
   // laptops: hold Space · Bluetooth PTT remotes usually emit media/volume keys
-  addEventListener('keydown', e => { if (!started || e.repeat || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || document.querySelector('dialog[open]')) return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) { e.preventDefault(); open(); } });
-  addEventListener('keyup', e => { if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) shut(); });
-  if ('mediaSession' in navigator) {
+  addEventListener('keydown', e => { if (NATIVE_RADIO && e.key === 'MediaPlayPause') return; if (!started || e.repeat || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || document.querySelector('dialog[open]')) return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) { e.preventDefault(); open(); } });
+  addEventListener('keyup', e => { if (NATIVE_RADIO && e.key === 'MediaPlayPause') return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) shut(); });
+  if ('mediaSession' in navigator && !NATIVE_RADIO) {          // the app's media session handles the headset button itself
     try {
       navigator.mediaSession.setActionHandler('play', () => { open(); setTimeout(shut, 2500); });
       navigator.mediaSession.setActionHandler('pause', shut);

@@ -165,14 +165,26 @@ class Client {
     clearInterval(this.ping);
     clients.delete(this);
     try { this.socket.destroy(); } catch (e) {}
-    if (this.mission && !this.replaced) broadcastRoster(this.mission);
+    if (this.mission && !this.replaced && !this.audioOf) broadcastRoster(this.mission);
   }
 }
 
 /* -------------------------------------------------------------- protocol  */
-function peers(code, exclude) {
-  return [...clients].filter(c => c.mission === code && c.alive && c !== exclude);
+function peers(code, exclude) {       // units only: native radio sidecars are not units (no card, no roster entry)
+  return [...clients].filter(c => c.mission === code && c.alive && c !== exclude && !c.audioOf);
 }
+/* native radio (Android app v1.7+): an audio-only sidecar connection that carries a rider's voice
+   while the screen is off. It speaks for its owner unit (same id, callsign, colour). */
+function sidecar(code, unitId) {
+  for (const c of clients) if (c.audioOf === unitId && c.mission === code && c.alive) return c;
+  return null;
+}
+function unitById(code, id) {
+  for (const c of clients) if (c.id === id && c.mission === code && c.alive && !c.audioOf) return c;
+  return null;
+}
+/* a message for a unit also goes to its radio sidecar (PTT start / end) */
+function deliver(p, msg) { p.send(msg); const s = sidecar(p.mission, p.id); if (s) s.send(msg); }
 function roster(code) {
   return peers(code, null).map(c => ({
     id: c.id, role: c.role, callsign: c.callsign, color: c.color, telemetry: c.telemetry
@@ -232,10 +244,11 @@ function handle(c, m) {
       if (!missions[code]) return;
       const reason = m.reason || (m.mode === 'close' ? 'MISSION CLOSED' : 'MISSION ABORTED');
       const payload = { t: 'mission.ended', mode: m.mode === 'close' ? 'close' : 'abort', reason, by: c.callsign || 'ESCORT' };
-      peers(code, null).forEach(p => p.send(payload));
+      const all = [...clients].filter(p => p.mission === code && p.alive);   // units + radio sidecars
+      all.forEach(p => p.send(payload));
       delete missions[code];
       persist();
-      peers(code, null).forEach(p => { p.mission = null; });
+      all.forEach(p => { p.mission = null; });
       break;
     }
     case 'channel.create': {     // COMMS MODE: open intercom channel, numeric Channel ID, no telemetry / location
@@ -253,9 +266,17 @@ function handle(c, m) {
       if (wantUnit && (!mis || mis.kind !== 'comms')) return c.send({ t: 'error', code: 'NO_CHANNEL', msg: 'Channel ID not found' });
       if (!mis || (!wantUnit && mis.kind === 'comms')) return c.send({ t: 'error', code: 'NO_MISSION', msg: 'Mission code not found' });
       if (mis.kind === 'comms') mis.lastSeen = Date.now();
+      if (m.audio === true) {          // native radio sidecar for unit m.owner
+        const owner = String(m.owner || '');
+        if (!/^[0-9a-f-]{36}$/i.test(owner)) return c.send({ t: 'error', code: 'BAD_OWNER', msg: 'Radio owner id missing' });
+        for (const x of [...clients]) if (x !== c && x.audioOf === owner) { x.replaced = true; x.close(); }   // one radio per unit
+        c.mission = code; c.audioOf = owner; c.role = 'audio';
+        c.callsign = String(m.callsign || 'UNKNOWN').toUpperCase().slice(0, 24);
+        return c.send({ t: 'joined', id: c.id, audio: true, owner, mission: { code, name: mis.name } });
+      }
       /* same device reconnecting: keep its id so peers keep their voice link and card */
       if (typeof m.resume === 'string' && /^[0-9a-f-]{36}$/i.test(m.resume) && m.resume !== c.id) {
-        const old = [...clients].find(x => x !== c && x.id === m.resume);
+        const old = [...clients].find(x => x !== c && x.id === m.resume && !x.audioOf);
         if (old) { old.replaced = true; old.close(); }
         c.id = m.resume;
       }
@@ -267,31 +288,33 @@ function handle(c, m) {
       break;
     }
     case 'telemetry': {
-      if (!c.mission || c.role === 'unit') return;          // comms channels carry no telemetry / location
+      if (!c.mission || c.role === 'unit' || c.audioOf) return;   // comms channels / radio sidecars carry no telemetry
       c.telemetry = m.data; c.telAt = Date.now();
       broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data, fresh: m.fresh || undefined }, c);
       break;
     }
     case 'signal': {           // WebRTC offer/answer/ice — targeted
-      const dst = [...clients].find(x => x.id === m.to && x.alive && x.mission === c.mission);
+      const dst = [...clients].find(x => x.id === m.to && x.alive && x.mission === c.mission && !x.audioOf);
       if (dst) dst.send({ t: 'signal', from: c.id, callsign: c.callsign, data: m.data });
       break;
     }
-    case 'ptt': {              // {state:'start'|'end', targets:[ids]|'all', relay:[ids] (units that get audio through the relay)}
+    case 'ptt': {              // {state:'start'|'end', targets:[ids]|'all', relay:[ids]|'all' (units that get audio through the relay)}
       if (!c.mission) return;
-      c.relay = m.state === 'start' && Array.isArray(m.relay) ? m.relay : null;
-      const list = m.targets === 'all' ? peers(c.mission, c) :
-        peers(c.mission, c).filter(p => (m.targets || []).includes(p.id));
-      list.forEach(p => p.send({ t: 'ptt', from: c.id, callsign: c.callsign, color: c.color, state: m.state }));
+      c.relay = m.state === 'start' ? relayList(m.relay) : null;
+      const from = c.audioOf || c.id, owner = c.audioOf ? unitById(c.mission, c.audioOf) : c;
+      const others = peers(c.mission, null).filter(p => p.id !== from);
+      const list = m.targets === 'all' ? others : others.filter(p => (m.targets || []).includes(p.id));
+      const msg = { t: 'ptt', from, callsign: (owner && owner.callsign) || c.callsign, color: (owner && owner.color) || c.color, state: m.state };
+      list.forEach(p => deliver(p, msg));
       break;
     }
     case 'text': {
-      if (!c.mission) return;
+      if (!c.mission || c.audioOf) return;
       broadcast(c.mission, { t: 'text', from: c.id, callsign: c.callsign, body: m.body, ts: Date.now() }, null);
       break;
     }
     case 'gps.refresh': {      // escort asks every unit for a fresh GPS fix; answer at once with the last known positions
-      if (!c.mission || c.role === 'unit') return;
+      if (!c.mission || c.role === 'unit' || c.audioOf) return;
       const rid = String(m.rid || Date.now());
       broadcast(c.mission, { t: 'gps.refresh', from: c.id, callsign: c.callsign, rid, ts: Date.now() }, c);
       c.send({ t: 'gps.snapshot', rid, ts: Date.now(),
@@ -304,16 +327,19 @@ function handle(c, m) {
       broadcastRoster(code);
       break;
     }
-    case 'ptt.relay': c.relay = Array.isArray(m.relay) ? m.relay : null; break;
+    case 'ptt.relay': c.relay = relayList(m.relay); break;
     case 'ping': c.send({ t: 'pong', ts: m.ts }); break;
   }
 }
 /* relay voice: frames from a transmitting unit go only to the targets it could not reach peer-to-peer.
    The sender id is prefixed so receivers can mute / label it: [idLen][id utf8][payload] */
+function relayList(r) { return r === 'all' ? 'all' : Array.isArray(r) ? r : null; }
 function handleBinary(c, buf) {
   if (!c.mission || !c.relay || !c.relay.length || buf.length < 5 || buf.length > 16384) return;
-  const idb = Buffer.from(c.id), out = Buffer.concat([Buffer.from([idb.length]), idb, buf]);
-  peers(c.mission, c).filter(p => c.relay.includes(p.id)).forEach(p => p.sendBinary(out));
+  const from = c.audioOf || c.id;      // a radio sidecar transmits as its owner unit
+  const idb = Buffer.from(from), out = Buffer.concat([Buffer.from([idb.length]), idb, buf]);
+  peers(c.mission, null).filter(p => p.id !== from && (c.relay === 'all' || c.relay.includes(p.id)))
+    .forEach(p => (sidecar(c.mission, p.id) || p).sendBinary(out));   // a unit with a native radio hears it there
 }
 
 const COLORS = ['#00e5ff', '#ffb000', '#7cff5a', '#ff4d6d', '#b06bff', '#ff8a3d', '#4dffd5', '#ffe14d'];
