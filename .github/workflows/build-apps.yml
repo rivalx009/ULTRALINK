@@ -1,0 +1,48 @@
+name: Build apps
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { working-directory: apps/desktop } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install --no-audit --no-fund
+      - run: npx electron-builder --win nsis portable --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with: { name: ultralink-desktop, path: "apps/desktop/dist/*.exe" }
+      - name: Attach installer to the GitHub Release (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: "apps/desktop/dist/ultralink-desktop-setup.exe" }
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Keystore
+        env: { KS: "${{ secrets.ULTRALINK_KEYSTORE_B64 }}" }
+        run: |
+          if [ -n "$KS" ]; then echo "$KS" | base64 -d > $RUNNER_TEMP/ul.jks; echo "ULTRALINK_KEYSTORE=$RUNNER_TEMP/ul.jks" >> $GITHUB_ENV; fi
+      - name: Build APK
+        working-directory: apps/android
+        env:
+          ULTRALINK_KEYSTORE_PASSWORD: ${{ secrets.ULTRALINK_KEYSTORE_PASSWORD }}
+          ULTRALINK_KEY_ALIAS: ${{ secrets.ULTRALINK_KEY_ALIAS }}
+          ULTRALINK_KEY_PASSWORD: ${{ secrets.ULTRALINK_KEY_PASSWORD }}
+        run: gradle assembleRelease && cp app/build/outputs/apk/release/*.apk ultralink.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: ultralink-android, path: apps/android/ultralink.apk }
+      - name: Attach APK to the GitHub Release (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with: { files: "apps/android/ultralink.apk" }
