@@ -266,5 +266,42 @@
   }
 
   global.UL = global.UL || {};
-  Object.assign(global.UL, { routeType, lapPlan, expandLaps, lapTimes, sectorLine, cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
+
+  /* ---- finish vs target, in words: +12 seconds (late) / -12 seconds (early) ---- */
+  function deltaWords(d) {
+    if (d == null || !isFinite(d)) return '';
+    const n = Math.round(Math.abs(d)), sg = Math.round(d) > 0 ? '+' : Math.round(d) < 0 ? '-' : '';
+    if (!n) return '0 seconds (on target)';
+    const h = Math.floor(n / 3600), m = Math.floor(n % 3600 / 60), s = n % 60, pl = (x, w) => x + ' ' + w + (x === 1 ? '' : 's');
+    const parts = []; if (h) parts.push(pl(h, 'hour')); if (m) parts.push(pl(m, 'min').replace('mins', 'min')); if (s || !parts.length) parts.push(pl(s, 'second'));
+    return sg + parts.join(' ');
+  }
+  /** compact form for tables: +12 s / -1:15 */
+  function deltaShort(d) {
+    if (d == null || !isFinite(d)) return '';
+    const n = Math.round(Math.abs(d)), sg = Math.round(d) > 0 ? '+' : Math.round(d) < 0 ? '-' : '±';
+    return sg + (n < 60 ? n + ' s' : hms(n));
+  }
+
+  /* ---- ADVISED SPEED: constant-power pacing over the rest of the route so the rider finishes exactly on target ----
+   * solves power W so Σ dd / v(W, grade) over [covered → finish] = remSec, then returns the mean speed over the next `ahead` metres.
+   * result: { v (m/s), avg (m/s, whole remainder), watts, state: 'ok' | 'max' (target not reachable) | 'lost' (time already up) } */
+  function paceSpeed(route, covered, remSec, ahead) {
+    if (!route || !route.points || route.points.length < 2) return null;
+    ahead = ahead || 300;
+    if (!route._segs) { const P = route.points, sg = []; for (let i = 1; i < P.length; i++) { const dd = P[i].d - P[i - 1].d; if (dd > 0) sg.push({ a: P[i - 1].d, b: P[i].d, grade: (P[i].grade + P[i - 1].grade) / 2 }); } Object.defineProperty(route, '_segs', { value: sg, enumerable: false }); }
+    const c = Math.max(0, covered || 0), rem = [];
+    for (const s of route._segs) { if (s.b <= c) continue; rem.push({ a: Math.max(s.a, c), b: s.b, grade: s.grade }); }
+    const dist = rem.reduce((a, s) => a + s.b - s.a, 0);
+    if (dist < 20) return null;
+    if (!(remSec > 0)) return { v: null, avg: null, watts: null, state: 'lost', dist };
+    const total = W => rem.reduce((a, s) => a + (s.b - s.a) / speedAt(W, s.grade), 0);
+    let state = 'ok', W;
+    if (total(3000) > remSec) { state = 'max'; W = 3000; }
+    else { let lo = 5, hi = 3000; for (let n = 0; n < 40; n++) { const m = (lo + hi) / 2; total(m) > remSec ? lo = m : hi = m; } W = (lo + hi) / 2; }
+    let dd = 0, tt = 0;
+    for (const s of rem) { if (dd >= ahead) break; const l = Math.min(s.b - s.a, ahead - dd); dd += l; tt += l / speedAt(W, s.grade); }
+    return { v: dd / tt, avg: state === 'max' ? dist / remSec : dist / total(W), watts: state === 'ok' ? Math.round(W) : null, state, dist };
+  }
+  Object.assign(global.UL, { deltaWords, deltaShort, paceSpeed, routeType, lapPlan, expandLaps, lapTimes, sectorLine, cpLabel, moveCut, projectToRoute, sectorStats, autoTargets, gradeColor, SECTOR_PALETTE: PALETTE, parseHMS, hmsStr: hms, normaliseSectors: normalise, addCut, removeCut, autoSplit, sectorAt, routeAt, SectorTimer });
 })(window);

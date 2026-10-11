@@ -79,6 +79,7 @@
         </div>
         <canvas class="sc-cv"></canvas>
         <div class="sc-lg">GRADIENT ${[[-6, '≤−6'], [-3, '−2'], [0, '0'], [3, '2'], [5, '4'], [7, '6'], [9, '8'], [11, '10+']].map(([g, l]) => `<em style="background:${UL.gradeColor(g)}"></em>${l}`).join(' ')}%</div>
+        ${o.results && o.results.length ? `<div class="sc-n">RESULTS VS TARGET</div><div class="sc-res">${o.results.map(r => `<div class="seclr"><i style="background:${s.color}"></i><span>${esc(r.key)}</span><b>${UL.hmsStr(r.dur)}</b><span style="color:${r.dl == null ? 'var(--dim)' : Math.round(r.dl) <= 0 ? 'var(--good)' : 'var(--bad)'}">${r.dl == null ? '—' : esc(UL.deltaWords(r.dl))}</span></div>`).join('')}</div>` : ''}
         <div class="sc-n">NOTES</div>
         ${o.editable ? `<textarea class="sc-notes" placeholder="Notes for this sector: road surface, dangerous bends, feed zone, where to pass, tactics…">${esc(s.notes || '')}</textarea>`
           : `<div class="sc-nt">${s.notes ? esc(s.notes) : '<span class="muted">No notes for this sector.</span>'}</div>`}

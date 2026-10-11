@@ -182,7 +182,7 @@
     sectors = UL.normaliseSectors(mission.sectors, total);
     sectorTimer = new UL.SectorTimer(sectors, total, {
       checkpoint: (k, i, sc) => { fx.checkpoint(); if (navigator.vibrate) navigator.vibrate([40, 40, 40]); UL.toast(UL.cpLabel(sc) + ' · ' + sc.name, 'ok'); },
-      finish: (k, i, dur, sc) => { fx.sectorDone(); if (navigator.vibrate) navigator.vibrate(120); const dl = sc.target ? dur - sc.target : null; UL.toast(sc.name + ' ' + UL.hmsStr(dur) + (dl != null ? ' (' + (dl <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(dl)) + ')' : ''), dl != null && dl > 0 ? 'warn' : 'ok', 5000); }
+      finish: (k, i, dur, sc) => { fx.sectorDone(); if (navigator.vibrate) navigator.vibrate(120); const dl = sc.target ? dur - sc.target : null; if (dl != null) UL.deltaPop(sc.name + ' · ' + UL.hmsStr(dur), dl); else UL.toast(sc.name + ' ' + UL.hmsStr(dur), 'ok', 5000); }
     });
   }
   function renderSector() {

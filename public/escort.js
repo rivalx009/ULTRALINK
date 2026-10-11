@@ -76,6 +76,7 @@
     if (route && mission.laps > 1) { try { const k = +sessionStorage['ulIdx:' + mission.code]; if (k >= 0) tel.lastIdx = k; } catch (e) {} }
     clockStart = mission.clockStart || null; clockStop = mission.clockStop || null; targetSec = mission.targetSec || null; startAt = mission.startAt || null;
     sectors = UL.normaliseSectors(mission.sectors, route ? route.distance : 1);
+    loadResults();
     sectorTimer = new UL.SectorTimer(sectors, route ? route.distance : 1, {
       checkpoint: (key, i, s) => {
         fx.checkpoint(); log('CP', `${key} passed ${UL.cpLabel(s)} — ${s.name}`, s.color); UL.toast(`${key} · ${s.name} STARTED`, 'ok');
@@ -83,14 +84,18 @@
       },
       finish: (key, i, dur, s, isEnd) => {
         fx.sectorDone();
-        const dl = s.target ? dur - s.target : null, dtxt = dl == null ? '' : ` (${dl <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(dl))} vs target)`;
+        const dl = s.target ? dur - s.target : null, dtxt = dl == null ? '' : ` (${UL.deltaWords(dl)} vs target)`;
         log('SEC', `${key} finished ${s.name} in ${UL.hmsStr(dur)}${dtxt}`, s.color);
-        UL.toast(`${key} · ${s.name} ${UL.hmsStr(dur)}${dtxt}`, dl != null && dl > 0 ? 'warn' : 'ok', 5000);
+        recordResult({ key, i, name: s.name, lap: s.lap || null, dur, target: s.target || null, dl });
+        if (dl != null) UL.deltaPop(`${key} · ${s.name} · ${UL.hmsStr(dur)}`, dl);
+        else UL.toast(`${key} · ${s.name} ${UL.hmsStr(dur)}`, 'ok', 5000);
         if (s.lap && (isEnd || (sectors[i + 1] && sectors[i + 1].lap !== s.lap))) {          // last sector of a lap → lap time
           const L = UL.lapTimes(sectors, sectorTimer.units.get(key)).find(x => x.lap === s.lap);
           if (L && L.time != null) { const d2 = L.target ? L.time - L.target : null;
-            log('LAP', `${key} LAP ${s.lap} / ${mission.laps} in ${UL.hmsStr(L.time)}${d2 == null ? '' : ` (${d2 <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(d2))} vs target ${UL.hmsStr(L.target)})`}`, '#ffb000');
-            UL.toast(`${key} · LAP ${s.lap} ${UL.hmsStr(L.time)}`, d2 != null && d2 > 0 ? 'warn' : 'ok', 5000); }
+            log('LAP', `${key} LAP ${s.lap} / ${mission.laps} in ${UL.hmsStr(L.time)}${d2 == null ? '' : ` (${UL.deltaWords(d2)} vs target ${UL.hmsStr(L.target)})`}`, '#ffb000');
+            recordResult({ key, i: -1, name: 'LAP ' + s.lap, lap: s.lap, dur: L.time, target: L.target || null, dl: d2, isLap: true });
+            if (d2 != null) UL.deltaPop(`${key} · LAP ${s.lap} / ${mission.laps} · ${UL.hmsStr(L.time)}`, d2);
+            else UL.toast(`${key} · LAP ${s.lap} ${UL.hmsStr(L.time)}`, 'ok', 5000); }
         }
         if (isEnd) log('SYS', `${key} FINISHED THE ${mission.laps > 1 ? 'SESSION (' + mission.laps + ' LAPS)' : 'ROUTE'}`, '#7cff5a');
       }
@@ -196,7 +201,7 @@
     hiLayer = L.polyline(seg, { color: '#fff', weight: 9, opacity: .28, interactive: false }).addTo(map);
     const wide = innerWidth >= 760, rp = wide ? 380 + ($('map').classList.contains('popopen') ? 312 : 0) : 40;
     map.flyToBounds(UL.sectorBounds(route, s), { paddingTopLeft: [40, 40], paddingBottomRight: [rp, wide ? 40 : Math.round(innerHeight * .45)], duration: 1.1, maxZoom: 17 });
-    UL.sectorCard($('opsSecCard'), { route, sectors, index: i, editable: false, onClose: () => closeOpsSector() });
+    UL.sectorCard($('opsSecCard'), { route, sectors, index: i, editable: false, results: results.filter(r => !r.isLap && r.i === i), onClose: () => closeOpsSector() });
     fx.open(); updateReturnBtn();
   }
   function closeOpsSector(silent) {
@@ -250,7 +255,7 @@
       u.marker.setLatLng(ll); u.marker.setIcon(icon(u));
       const t = u.trail.getLatLngs(); t.push(L.latLng(ll)); if (t.length > cfg.v.trailLength) t.shift(); u.trail.setLatLngs(t);
     }
-    if (follow && Date.now() > flyUntil && sel === u.id && (d.speed || 0) > 0.6) map.panTo(ll, { animate: true, duration: .4 });
+    if (follow && Date.now() > flyUntil && sel === u.id && (u.role === 'escort' || (d.speed || 0) > 0.6)) map.panTo(ll, { animate: true, duration: .4 });
   }
 
   /* ================================================================ SELF GPS */
@@ -280,8 +285,10 @@
     if (sel === 'self') renderSel();
     renderUnits();
     const now = Date.now();
-    if (now - lastTx > 1500 || freshRid) { lastTx = now; const msg = { t: 'telemetry', data: Object.assign({}, s, { lead: leadName }) }; if (freshRid) { msg.fresh = freshRid; freshRid = null; } link.send(msg); }
+    if (now - lastTx > 1500 || freshRid) { lastTx = now; const msg = { t: 'telemetry', data: escortPos(s) }; if (freshRid) { msg.fresh = freshRid; freshRid = null; } link.send(msg); }
   });
+  /* escorts share their position only (no speed / heart rate / ETA …): shown as a marker on the map */
+  function escortPos(s) { s = s || {}; return { lat: s.lat, lon: s.lon, acc: s.acc, heading: s.heading, covered: s.covered, offRoute: s.offRoute, ts: s.ts, lead: leadName }; }
   function selfUnit() { return { id: 'self', role: 'escort', callsign: myCall, color: myColor, data: tel.state, ts: Date.now() }; }
   const isLead = u => u && u.role === 'rider' && leadName && u.callsign === leadName;
   function sortedUnits() { return [...units.values()].sort((a, b) => (isLead(b) - isLead(a)) || (a.role === b.role ? a.callsign.localeCompare(b.callsign) : a.role === 'rider' ? -1 : 1)); }
@@ -294,7 +301,7 @@
     syncClockBtn();
     if (m.clockStart && !m.clockStop && wasIdle) { fx.go(); UL.toast('MISSION CLOCK RUNNING — GO', 'ok'); $('cdBanner').style.display = 'none'; }
     log('SYS', clockStart ? (clockStop ? 'CLOCK STOPPED' : 'CLOCK RUNNING' + (m.auto ? ' (SCHEDULED START)' : '')) : 'CLOCK RESET', '#7cff5a');
-    if (!clockStart && sectorTimer) sectorTimer.reset();
+    if (!clockStart && sectorTimer) { sectorTimer.reset(); results = []; saveResults(); }
   });
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCdSec = null; });
   link.on('mission.ended', m => {
@@ -351,16 +358,36 @@
     $('btnClock').className = clockStart && !clockStop ? 'primary' : 'ghost';
   }
   const elapsedSec = () => clockStart ? ((clockStop || Date.now()) - clockStart) / 1000 : 0;
+  /* ADVISED SPEED (lead rider only): constant-effort pace over the rest of the route that finishes exactly on the overall target */
+  let advCache = { k: '', t: 0, r: null };
+  function advisedFor(u) {
+    if (!isLead(u) || !targetSec || !clockStart || clockStop || !route || !u.data || u.data.covered == null) return null;
+    const rem = targetSec - elapsedSec(), k = u.callsign + '|' + Math.round(u.data.covered / 10) + '|' + targetSec;
+    if (advCache.k === k && Date.now() - advCache.t < 3000) return advCache.r;
+    const r = UL.paceSpeed(route, u.data.covered, rem, 300);
+    advCache = { k, t: Date.now(), r }; return r;
+  }
+  /* → { txt, val, unit, cls, note } for display */
+  function advView(u) {
+    const a = advisedFor(u); if (!a) return null;
+    if (a.state === 'lost') return { txt: 'TARGET TIME PASSED', val: '--', unit: '', cls: 'bad', note: 'TARGET LOST' };
+    const v = cfg.speed(a.v), cur = u.data.speed != null ? cfg.speed(u.data.speed) : null;
+    const cls = a.state === 'max' ? 'bad' : cur == null ? '' : cur + 0.5 < v ? 'bad' : 'ok';
+    const note = a.state === 'max' ? 'TARGET OUT OF REACH · GO FLAT OUT' : cur == null ? 'FINISH ON TARGET' : cur + 0.5 < v ? 'SPEED UP +' + (v - cur).toFixed(1) : cur - 1.5 > v ? 'AHEAD · CAN EASE ' + (cur - v).toFixed(1) : 'ON PACE';
+    return { txt: 'ADVISED ' + v.toFixed(1) + ' ' + cfg.speedU(), val: v.toFixed(1), unit: cfg.speedU(), cls, note, avg: cfg.speed(a.avg).toFixed(1) };
+  }
   function renderClock() {
     const e = elapsedSec();
     $('mClock').textContent = UL.fmt.hms(e).padStart(5, '0');
     $('mTarget').textContent = 'TARGET ' + (targetSec ? UL.fmt.hms(targetSec) : '--:--');
-    const u = sel === 'self' ? { data: tel.state } : units.get(sel);
+    const su = units.get(sel), u = su && su.role === 'rider' ? su : leadUnit();
     const togo = u && u.data ? u.data.etaSec : null;
     if (targetSec && clockStart && togo != null) {
       const proj = e + togo, d = proj - targetSec;
       $('mDelta').textContent = 'DELTA ' + (d >= 0 ? '+' : '−') + UL.fmt.hms(Math.abs(d)); $('mDelta').className = 'tag ' + (d <= 0 ? 'ok' : 'bad');
     } else { $('mDelta').textContent = 'DELTA --'; $('mDelta').className = 'tag'; }
+    { const ma = $('mAdv'), lu = leadUnit(), av = lu && advView(lu);
+      if (ma) { ma.style.display = av ? '' : 'none'; if (av) { ma.textContent = '★ ' + lu.callsign + ' ' + av.txt; ma.className = 'tag ' + av.cls; ma.title = av.note + (av.avg ? ' · avg to finish ' + av.avg + ' ' + av.unit : ''); } } }
     /* departure countdown */
     const cd = $('cdBanner');
     if (startAt && !clockStart) {
@@ -390,9 +417,9 @@
       <div class="ubody"><div class="gwrap" title="Click the gauge to cycle: speed / heart rate / gradient">${gaugeSvg()}<div class="gval"><b>0.0</b><small>KM/H</small></div><div class="gmode">SPEED ▸</div></div>
       <div class="ustats"><div><div class="k">HEART</div><div class="v"><span class="hrp">♥</span> <span class="hv">--</span></div></div><div><div class="k">GRADE %</div><div class="v gv">--</div></div>
       <div><div class="k">REMAIN</div><div class="v rv">--</div></div><div><div class="k">ETA</div><div class="v ev">--:--</div></div></div></div>
-      <div class="prog"></div><div class="usec"></div>`;
+      <div class="prog"></div><div class="uadv" style="display:none"></div><div class="usec"></div>`;
     const c = { el, mode: 0, refs: { ico: el.querySelector('.ico'), cs: el.querySelector('.cs'), ptt: el.querySelector('.ptt'), dot: el.querySelector('.dot'), vl: el.querySelector('.vl'), nd: el.querySelector('.nd'),
-      gval: el.querySelector('.gval b'), gunit: el.querySelector('.gval small'), gmode: el.querySelector('.gmode'), hv: el.querySelector('.hv'), hrp: el.querySelector('.hrp'), gv: el.querySelector('.gv'), rv: el.querySelector('.rv'), ev: el.querySelector('.ev'), prog: el.querySelector('.prog'), usec: el.querySelector('.usec') }, sig: '' };
+      gval: el.querySelector('.gval b'), body: el.querySelector('.ubody'), gunit: el.querySelector('.gval small'), gmode: el.querySelector('.gmode'), hv: el.querySelector('.hv'), hrp: el.querySelector('.hrp'), gv: el.querySelector('.gv'), rv: el.querySelector('.rv'), ev: el.querySelector('.ev'), prog: el.querySelector('.prog'), usec: el.querySelector('.usec'), uadv: el.querySelector('.uadv') }, sig: '' };
     el.onclick = () => selectUnit(id);
     c.refs.lead = el.querySelector('.lead');
     c.refs.lead.onclick = e => { e.stopPropagation(); const u = units.get(id); if (u) setLead(u.callsign === leadName ? null : u.callsign); };
@@ -414,6 +441,8 @@
     c.el.classList.toggle('sel', sel === id); c.el.classList.toggle('stale', stale);
     c.el.classList.toggle('off', !!OFF.get(id)?.on); c.el.classList.toggle('leadcard', isLead(u));
     r.lead.style.display = u.role === 'rider' ? '' : 'none'; r.lead.classList.toggle('on', isLead(u));
+    const posOnly = u.role !== 'rider';                               // escorts: no telemetry, position on the map only
+    r.body.style.display = posOnly ? 'none' : ''; r.prog.style.display = posOnly ? 'none' : '';
     c.el.style.borderLeft = '3px solid ' + col;
     r.ico.innerHTML = UL.unitSvg(u.role, col, 0, 15);
     r.cs.style.color = col; r.cs.textContent = (id === 'self' ? 'YOU · ' : '') + u.callsign;
@@ -443,13 +472,16 @@
       } else if (st && st.times.length) {
         let li = st.times.length - 1; while (li > 0 && st.times[li] == null) li--;
         const s = sectors[li], t = st.times[li], dl = s && s.target ? t - s.target : null;
-        r.usec.innerHTML = `<span style="color:var(--good)">✓</span><span>${esc(s.name)}</span><b>${UL.hmsStr(t)}</b>${dl != null ? `<span style="color:${dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(dl))}</span>` : ''}`;
+        r.usec.innerHTML = `<span style="color:var(--good)">✓</span><span>${esc(s.name)}</span><b>${UL.hmsStr(t)}</b>${dl != null ? `<span style="color:${dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${UL.deltaShort(dl)}</span>` : ''}`;
       } else r.usec.innerHTML = '<span>AWAITING CHECKPOINT</span>';
     } else {
       const ld = id === 'self' ? leadName : d.lead;
       r.usec.innerHTML = ld ? `<span class="ltag">★ LEAD → ${esc(ld)}</span>` : '';
     }
     if (OFF.get(id)?.on) r.usec.innerHTML = `<b style="color:var(--bad)">⚠ OFF ROUTE ${Math.round(OFF.get(id).dist)} M</b>`;
+    const av = id !== 'self' && advView(u);
+    r.uadv.style.display = av ? '' : 'none';
+    if (av) r.uadv.innerHTML = `<span>ADVISED</span><b class="${av.cls}">${av.val}<small> ${av.unit}</small></b><em class="${av.cls}">${av.note}</em>`;
   }
   function renderUnits() {
     if (!opsStarted) return;
@@ -472,6 +504,13 @@
     $('selName').style.color = col;
     $('selKey').textContent = 'PTT ' + (sel === 'self' ? '—' : UL.KEY_LABEL(keymap.get(sel)));
     const S = v => v == null ? '--' : cfg.speed(v).toFixed(1), D = v => v == null ? '--' : cfg.dist(v).toFixed(2);
+    if (u.role !== 'rider') {                                         // escorts: position only (marker on the map)
+      const er = [['POSITION', d.lat != null ? 'ON MAP' : 'NO FIX']];
+      if (sel !== 'self') er.push(['DIST TO ESCORT ' + cfg.distU(), (d.lat != null && self.lat != null) ? D(UL.haversine({ lat: self.lat, lon: self.lon }, { lat: d.lat, lon: d.lon })) : '--']);
+      const ld = sel === 'self' ? leadName : d.lead; if (ld) er.push(['FOLLOWING', '★ ' + esc(ld)]);
+      $('selKv').innerHTML = er.map(r => `<div><div class="k">${r[0]}</div><div class="v">${r[1]}</div></div>`).join('');
+      return syncFollowBtn();
+    }
     const rows = [
       ['SPEED ' + cfg.speedU(), S(d.speed)], ['AVG ' + cfg.speedU(), S(d.avg)],
       ['DIST COVERED ' + cfg.distU(), D(d.covered)], ['DIST REMAINING ' + cfg.distU(), D(d.remaining)],
@@ -483,6 +522,7 @@
       rows.push(['HEART RATE BPM', d.hr ?? '--']);
       rows.push(['ROUTE GAP ' + cfg.distU(), (d.covered != null && self.covered != null) ? D(d.covered - self.covered) : '--']);
     } else if (d.hr) rows.push(['HEART RATE BPM', d.hr]);
+    { const av = advView(u); if (av) rows.unshift(['★ ADVISED ' + av.unit, `<span style="color:var(--${av.cls === 'ok' ? 'good' : av.cls === 'bad' ? 'bad' : 'fg'})">${av.val}</span> <small style="font-size:8px;color:var(--dim)">${av.note}</small>`]); }
     if (route && d.covered != null) { const s = UL.sectorAt(sectors, d.covered); rows.push(['SECTOR', `<span style="color:${s.color}">${esc(s.name)}</span>`]); }
     $('selKv').innerHTML = rows.map(r => `<div><div class="k">${r[0]}</div><div class="v">${r[1]}</div></div>`).join('');
     syncFollowBtn();
@@ -534,6 +574,7 @@
       <div class="pgrid"><div><div class="k">SPEED ${cfg.speedU()}</div><div class="v">${S(d.speed)}</div></div><div><div class="k">HEART BPM</div><div class="v">${d.hr ?? '--'}</div></div><div><div class="k">GRADE %</div><div class="v">${UL.fmt.pct(d.grade)}</div></div>
       <div><div class="k">ELEV ${cfg.elevU()}</div><div class="v">${d.ele == null ? '--' : Math.round(cfg.elev(d.ele))}</div></div><div><div class="k">REMAIN ${cfg.distU()}</div><div class="v">${D(d.remaining)}</div></div><div><div class="k">ETA</div><div class="v">${d.eta ? cfg.time(d.eta) : '--:--'}</div></div>
       <div><div class="k">DIST TO ME ${cfg.distU()}</div><div class="v">${(d.lat != null && self.lat != null) ? D(UL.haversine({ lat: self.lat, lon: self.lon }, { lat: d.lat, lon: d.lon })) : '--'}</div></div><div><div class="k">AVG ${cfg.speedU()}</div><div class="v">${S(d.avg)}</div></div><div><div class="k">COVERED ${cfg.distU()}</div><div class="v">${D(d.covered)}</div></div></div>
+      ${(() => { const av = advView(u); return av ? `<div class="psec">ADVISED SPEED · FINISH ON TARGET</div><div class="padv ${av.cls}"><b>${av.val}<small> ${av.unit}</small></b><span>${av.note}${av.avg ? `<br><span class="muted">AVG TO FINISH ${av.avg} ${av.unit} · TARGET ${UL.fmt.hms(targetSec)}</span>` : ''}</span></div>` : ''; })()}
       <div class="psec">WIND ON RIDER</div>`;
     if (!adv) h += `<div class="hint" style="line-height:1.7">No wind data yet (${wind.status === 'error' ? 'wind service unreachable: ' + esc(wind.error) : 'loading…'}).<br><button class="ghost" id="popWind" style="margin-top:8px;width:100%">SET WIND MANUALLY</button></div>`;
     else {
@@ -559,11 +600,11 @@
       const LT = mission.laps > 1 ? UL.lapTimes(sectors, st) : null;
       sectors.forEach((s, i) => {
         if (LT && s.li === 0) { const L = LT.find(x => x.lap === s.lap), d2 = L.time != null && L.target ? L.time - L.target : null;
-          h += `<div class="seclr" style="margin-top:6px;border-top:1px solid var(--line2);padding-top:5px"><i style="background:transparent"></i><span style="color:var(--warn);letter-spacing:.18em">LAP ${s.lap}${L.current ? ' ▸' : ''}</span><b>${L.time != null ? UL.hmsStr(L.time) : L.part ? '▸ ' + UL.hmsStr(L.part) : '—'}</b><span style="color:${d2 == null ? 'var(--dim)' : d2 <= 0 ? 'var(--good)' : 'var(--bad)'}">${d2 != null ? (d2 <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(d2)) : L.target ? 'TGT ' + UL.hmsStr(L.target) : ''}</span></div>`; }
+          h += `<div class="seclr" style="margin-top:6px;border-top:1px solid var(--line2);padding-top:5px"><i style="background:transparent"></i><span style="color:var(--warn);letter-spacing:.18em">LAP ${s.lap}${L.current ? ' ▸' : ''}</span><b>${L.time != null ? UL.hmsStr(L.time) : L.part ? '▸ ' + UL.hmsStr(L.part) : '—'}</b><span style="color:${d2 == null ? 'var(--dim)' : d2 <= 0 ? 'var(--good)' : 'var(--bad)'}">${d2 != null ? UL.deltaShort(d2) : L.target ? 'TGT ' + UL.hmsStr(L.target) : ''}</span></div>`; }
         const t = st && st.times[i], run = st && st.cur === i ? sectorTimer.running(u.callsign) : null;
         const val = t != null ? UL.hmsStr(t) : run != null ? '▸ ' + UL.hmsStr(run) : '—';
         const dl = t != null && s.target ? t - s.target : null;
-        h += `<div class="seclr"><i style="background:${s.color}"></i><span>${esc(LT ? s.base || s.name : s.name)}</span><b>${val}</b><span style="color:${dl == null ? 'var(--dim)' : dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl != null ? (dl <= 0 ? '−' : '+') + UL.hmsStr(Math.abs(dl)) : (s.target ? 'TGT ' + UL.hmsStr(s.target) : '')}</span></div>`;
+        h += `<div class="seclr"><i style="background:${s.color}"></i><span>${esc(LT ? s.base || s.name : s.name)}</span><b>${val}</b><span style="color:${dl == null ? 'var(--dim)' : dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl != null ? UL.deltaShort(dl) : (s.target ? 'TGT ' + UL.hmsStr(s.target) : '')}</span></div>`;
       });
     }
     h += '</div>';
@@ -597,6 +638,25 @@
     $('wRef').onclick = () => { wind.loadRoute(route, true); UL.toast('REFRESHING WIND MODEL…'); };
   }
 
+  /* ============================================ SECTOR RESULTS (finish vs target, kept per mission) */
+  let results = [];
+  const resKey = () => 'ulSecRes:' + (mission && mission.code);
+  function loadResults() { try { results = JSON.parse(localStorage[resKey()] || '[]'); } catch (e) { results = []; } }
+  function saveResults() { try { results.length ? localStorage[resKey()] = JSON.stringify(results.slice(-600)) : localStorage.removeItem(resKey()); } catch (e) {} }
+  function recordResult(r) {
+    const id = r.key + '|' + (r.isLap ? 'L' + r.lap : r.i);
+    results = results.filter(x => x.id !== id);                // one entry per rider + sector (re-crossing replaces it)
+    results.push(Object.assign({ id, ts: Date.now() }, r)); saveResults();
+    if (opsSec != null && r.i === opsSec && route) UL.sectorCard($('opsSecCard'), { route, sectors, index: opsSec, editable: false, results: results.filter(x => !x.isLap && x.i === opsSec), onClose: () => closeOpsSector() });
+  }
+  const dlSpan = (d, fs) => d == null ? '' : `<span style="font-size:${fs || 9}px;color:${Math.round(d) <= 0 ? 'var(--good)' : 'var(--bad)'}">${UL.deltaShort(d)}</span>`;
+  function resultsLog() {
+    if (!results.length) return '';
+    const rows = results.slice().reverse().map(r => `<tr style="border-top:1px solid var(--line)"><td style="padding:5px 8px;color:var(--dim)">${new Date(r.ts).toTimeString().slice(0, 8)}</td><td style="padding:5px 8px;font-weight:600;letter-spacing:.12em">${esc(r.key)}</td><td style="padding:5px 8px;${r.isLap ? 'color:var(--warn)' : ''}">${esc(r.name)}${!r.isLap && r.lap && mission.laps > 1 ? ' · L' + r.lap : ''}</td><td style="padding:5px 8px;text-align:right"><b>${UL.hmsStr(r.dur)}</b></td><td style="padding:5px 8px;text-align:right" class="muted">${r.target ? UL.hmsStr(r.target) : '—'}</td><td style="padding:5px 8px;text-align:right;color:${r.dl == null ? 'var(--dim)' : Math.round(r.dl) <= 0 ? 'var(--good)' : 'var(--bad)'}">${r.dl == null ? 'NO TARGET' : esc(UL.deltaWords(r.dl))}</td></tr>`).join('');
+    return `<div class="row" style="margin-top:16px"><b style="letter-spacing:.16em;font-size:11px">RESULTS VS TARGET</b><span class="sp"></span><span class="hint">${results.length} finish${results.length === 1 ? '' : 'es'} · + late / − early</span></div>
+      <div style="overflow:auto;max-height:40vh;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums"><tr style="font-size:9px;color:var(--dim);letter-spacing:.12em"><th style="text-align:left;padding:5px 8px">TIME</th><th style="text-align:left;padding:5px 8px">RIDER</th><th style="text-align:left;padding:5px 8px">SECTOR</th><th style="text-align:right;padding:5px 8px">ACTUAL</th><th style="text-align:right;padding:5px 8px">TARGET</th><th style="text-align:right;padding:5px 8px">DELTA</th></tr>${rows}</table></div>`;
+  }
+
   /* ===================================================== SECTOR BOARD */
   let boardTimer = null;
   function openBoard() {
@@ -609,7 +669,7 @@
         let tot = 0;
         const cells = sectors.map((s, i) => {
           const t = st && st.times[i], run = st && st.cur === i ? sectorTimer.running(u.callsign) : null;
-          if (t != null) { tot += t; const dl = s.target ? t - s.target : null; return `<td style="padding:6px 8px;text-align:center"><b>${UL.hmsStr(t)}</b>${dl != null ? `<br><span style="font-size:9px;color:${dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${dl <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(dl))}</span>` : ''}</td>`; }
+          if (t != null) { tot += t; const dl = s.target ? t - s.target : null; return `<td style="padding:6px 8px;text-align:center"><b>${UL.hmsStr(t)}</b>${dl != null ? `<br><span style="font-size:9px;color:${dl <= 0 ? 'var(--good)' : 'var(--bad)'}">${UL.deltaShort(dl)}</span>` : ''}</td>`; }
           if (run != null) return `<td style="padding:6px 8px;text-align:center;color:var(--warn)">▸ ${UL.hmsStr(run)}</td>`;
           return '<td style="padding:6px 8px;text-align:center" class="muted">—</td>';
         }).join('');
@@ -617,7 +677,7 @@
       }).join('') || `<tr><td colspan="${sectors.length + 2}" class="muted" style="padding:16px;text-align:center">No riders connected yet.</td></tr>`;
       $('dlgBoard').innerHTML = `<div style="padding:18px"><div class="row"><h3>SECTOR BOARD</h3><span class="sp"></span><span class="hint">Times start at each checkpoint and stop at the next.</span></div>
         <div style="overflow:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums"><tr><th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim)">RIDER</th>${head}<th style="font-size:9px;color:var(--dim)">TOTAL</th></tr>${rows}</table></div>
-        <button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
+        ${resultsLog()}<button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
     };
     draw(); $('dlgBoard').showModal(); fx.open();
     clearInterval(boardTimer); boardTimer = setInterval(() => { if ($('dlgBoard').open) draw(); else clearInterval(boardTimer); }, 1000);
@@ -626,7 +686,7 @@
   /* lap sessions: one table per rider — a row per lap, a column per sector, then the lap time vs the lap target */
   function openLapBoard() {
     const base = sectors.filter(s => s.lap === 1), cell = 'padding:6px 8px;text-align:center';
-    const dlt = (t, tg) => { const d = t != null && tg ? t - tg : null; return d == null ? '' : `<br><span style="font-size:9px;color:${d <= 0 ? 'var(--good)' : 'var(--bad)'}">${d <= 0 ? '−' : '+'}${UL.hmsStr(Math.abs(d))}</span>`; };
+    const dlt = (t, tg) => { const d = t != null && tg ? t - tg : null; return d == null ? '' : `<br><span style="font-size:9px;color:${d <= 0 ? 'var(--good)' : 'var(--bad)'}">${UL.deltaShort(d)}</span>`; };
     const draw = () => {
       const riders = sortedUnits().filter(u => u.role === 'rider');
       const head = `<tr><th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--dim)">LAP</th>${base.map(s => `<th style="border-bottom:3px solid ${s.color};padding:6px 8px;font-size:9px;letter-spacing:.12em">${esc(s.base || s.name)}<br><span class="muted">${((s.end - s.start) / 1000).toFixed(1)} km</span></th>`).join('')}<th style="font-size:9px;color:var(--warn);letter-spacing:.14em">LAP TIME</th></tr>`;
@@ -643,7 +703,7 @@
           <div style="overflow:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums">${head}${rows}</table></div></div>`;
       }).join('') || '<div class="muted" style="padding:16px;text-align:center">No riders connected yet.</div>';
       $('dlgBoard').innerHTML = `<div style="padding:18px"><div class="row" style="flex-wrap:wrap"><h3>SECTOR BOARD · ${mission.laps} LAPS</h3><span class="sp"></span><span class="hint">Sector times and targets lap by lap.</span></div>${body}
-        <button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
+        ${resultsLog()}<button style="margin-top:14px" onclick="this.closest('dialog').close()">CLOSE</button></div>`;
     };
     draw(); $('dlgBoard').showModal(); fx.open();
     clearInterval(boardTimer); boardTimer = setInterval(() => { if ($('dlgBoard').open) draw(); else clearInterval(boardTimer); }, 1000);
@@ -960,7 +1020,6 @@
     renderClock(); renderUnits(); if (sel !== 'self') renderSel(); renderPop(); renderWindTag(); voiceTag(); updateReturnBtn();
     if (power) power.tick();
     if ($('mClk')) $('mClk').textContent = $('mClock').textContent;
-    OFF.forEach((s, id) => { if (s.on && !s.ack && Date.now() - s.beep > 10000) { s.beep = Date.now(); fx.alert(); } });
     renderOff();
   }
 
@@ -977,7 +1036,7 @@
       s.n = off > T ? s.n + 1 : 0;
       if (s.n >= 2) {                                   // two consecutive fixes beyond the threshold = real, not GPS noise
         Object.assign(s, { on: true, ack: false, since: Date.now(), back: 0, beep: Date.now() });
-        fx.alert(); log('ALERT', `${u.callsign} OFF ROUTE — ${Math.round(off)} M FROM COURSE`, '#ff4d6d');
+        log('ALERT', `${u.callsign} OFF ROUTE — ${Math.round(off)} M FROM COURSE`, '#ff4d6d');
         if (u.marker) u.marker.setIcon(icon(u));
       }
     } else {
@@ -993,6 +1052,8 @@
   let offSig = '';
   function renderOff() {
     const list = [...OFF.entries()].filter(([id, s]) => s.on && !s.ack && units.has(id));
+    /* voice alarm loops while any rider is off course and not acknowledged (MASTER ALERT / M stops it) */
+    if (list.length && !ended && !fx.alarmOn) fx.alarmStart(); else if ((!list.length || ended) && fx.alarmOn) fx.alarmStop();
     const box = $('offAlert'); if (!box) return;
     box.classList.toggle('show', list.length > 0);
     const h = list.map(([id, s]) => { const u = units.get(id), mm = Math.floor((Date.now() - s.since) / 1000);
@@ -1014,7 +1075,7 @@
     units.forEach(u => u.marker && u.marker.setIcon(icon(u)));
     assignKeys(); renderUnits(); renderPop(true); updateReturnBtn();
     if (power) power.setLead(leadName);
-    if (tel.state) link.send({ t: 'telemetry', data: Object.assign({}, tel.state, { lead: leadName }) });
+    if (tel.state) link.send({ t: 'telemetry', data: escortPos(tel.state) });
   }
   const leadUnit = () => leadName ? [...units.values()].find(isLead) : null;
   /** who "return" goes to: the lead rider, else the selected rider, else the first rider */
@@ -1123,7 +1184,7 @@
   /* another escort pressed refresh: take a fresh fix and send it straight away */
   link.on('gps.refresh', m => {
     startGeo();
-    freshFix().then(ok => { if (ok) { freshRid = m.rid; tel.dispatchEvent(new CustomEvent('update', { detail: tel.state })); } else link.send({ t: 'telemetry', data: Object.assign({}, tel.state, { lead: leadName }), fresh: m.rid }); });
+    freshFix().then(ok => { if (ok) { freshRid = m.rid; tel.dispatchEvent(new CustomEvent('update', { detail: tel.state })); } else link.send({ t: 'telemetry', data: escortPos(tel.state), fresh: m.rid }); });
     log('GPS', (m.callsign || 'ESCORT') + ' REFRESHED THE GPS FEED', '#ffb000');
   });
 

@@ -1,4 +1,4 @@
-/* ULTRALINK — synthesized sound effects (+ radio-open.mp3 for the line-open sound). F1-style radio keying + UI feedback. */
+/* ULTRALINK — synthesized sound effects (+ radio-open.mp3 line-open sound, off-course-alert.mp3 off-course alarm). F1-style radio keying + UI feedback. */
 (function (global) {
   'use strict';
   let ctx = null, master = null, noiseBuf = null;
@@ -41,18 +41,31 @@
     osc.connect(g); g.connect(master);
     osc.start(t0); osc.stop(t0 + dur + 0.02);
   }
-  /* line-open sound: radio-open.mp3, decoded once into the shared audio context */
-  let clip = null, clipLoading = false;
+  /* audio clips, decoded once into the shared audio context */
+  const CLIPS = { open: { url: 'radio-open.mp3' }, offCourse: { url: 'off-course-alert.mp3' } };
   function loadClip() {
-    if (clip || clipLoading || !ctx) return; clipLoading = true;
-    fetch('radio-open.mp3').then(r => r.ok ? r.arrayBuffer() : Promise.reject())
-      .then(b => new Promise((ok, no) => ctx.decodeAudioData(b, ok, no)))
-      .then(buf => { clip = buf; }).catch(() => { clipLoading = false; });
+    if (!ctx) return;
+    Object.values(CLIPS).forEach(k => {
+      if (k.buf || k.loading) return; k.loading = true;
+      fetch(k.url).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+        .then(b => new Promise((ok, no) => ctx.decodeAudioData(b, ok, no)))
+        .then(buf => { k.buf = buf; if (k === CLIPS.offCourse && alarm.on && !alarm.src) startAlarmClip(); })
+        .catch(() => { k.loading = false; });
+    });
   }
   function playClip(fallback) {
     const c = ensure(); if (!c) return;
-    if (!clip) { loadClip(); return fallback(); }   // not loaded yet: use the old beep this once
-    const src = c.createBufferSource(); src.buffer = clip; src.connect(master); src.start();
+    if (!CLIPS.open.buf) { loadClip(); return fallback(); }   // not loaded yet: use the old beep this once
+    const src = c.createBufferSource(); src.buffer = CLIPS.open.buf; src.connect(master); src.start();
+  }
+  /* off-course alarm: "WARNING. OFF COURSE. OFF COURSE. WARNING." on a loop until stopped (MASTER ALERT) */
+  const alarm = { on: false, src: null, gain: null, beepT: null };
+  function startAlarmClip() {
+    const c = ensure(); if (!c || !CLIPS.offCourse.buf) return false;
+    clearInterval(alarm.beepT); alarm.beepT = null;
+    const g = c.createGain(); g.gain.value = 1; g.connect(master);
+    const src = c.createBufferSource(); src.buffer = CLIPS.offCourse.buf; src.loop = true; src.connect(g); src.start();
+    alarm.src = src; alarm.gain = g; return true;
   }
   function noise(dur, o) {
     const c = ensure(); if (!c) return;
@@ -87,6 +100,17 @@
     success() { if (!S.ui) return; tone(880, 0.08, { type: 'triangle', gain: 0.16 }); tone(1320, 0.14, { type: 'triangle', gain: 0.16, at: 0.08 }); },
     error() { tone(300, 0.12, { type: 'triangle', gain: 0.1 }); tone(220, 0.16, { type: 'triangle', gain: 0.1, at: 0.11 }); },
     alert() { tone(880, 0.16, { type: 'square', gain: 0.07 }); tone(660, 0.2, { type: 'square', gain: 0.07, at: 0.2 }); },
+    alarmStart() {
+      if (alarm.on) return; alarm.on = true;
+      if (startAlarmClip()) return;
+      loadClip(); fx.alert(); alarm.beepT = setInterval(() => { if (alarm.on && !alarm.src) fx.alert(); }, 1500);   // until the voice clip has loaded
+    },
+    alarmStop() {
+      alarm.on = false; clearInterval(alarm.beepT); alarm.beepT = null;
+      if (alarm.src) { try { alarm.src.stop(); } catch (e) {} try { alarm.gain.disconnect(); } catch (e) {} }
+      alarm.src = null; alarm.gain = null;
+    },
+    get alarmOn() { return alarm.on; },
     save() { if (!S.ui) return; tone(1040, 0.05, { type: 'triangle', gain: 0.14 }); tone(1560, 0.05, { type: 'triangle', gain: 0.14, at: 0.06 }); tone(2080, 0.1, { type: 'triangle', gain: 0.12, at: 0.12 }); },
     remove() { if (!S.ui) return; tone(600, 0.1, { to: 200, type: 'sawtooth', gain: 0.1 }); noise(0.1, { freq: 900, gain: 0.08, at: 0.02 }); },
 

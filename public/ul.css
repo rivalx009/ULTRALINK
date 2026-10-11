@@ -50,6 +50,16 @@ label{display:block;font-size:10px;letter-spacing:.2em;color:var(--dim);margin:0
 #toasts{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:20000;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
 .toast{background:rgba(6,14,18,.95);border:1px solid var(--line2);border-left:3px solid var(--accent);padding:8px 16px;font-size:11px;letter-spacing:.14em;opacity:0;transform:translateY(8px);transition:.25s;max-width:80vw}
 .toast.in{opacity:1;transform:none}
+#dpops{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:20001;display:flex;flex-direction:column;gap:10px;align-items:center}
+.dpop{min-width:min(360px,86vw);text-align:center;background:rgba(6,14,18,.96);border:2px solid var(--line2);padding:14px 22px 12px;opacity:0;transform:scale(.85);transition:.3s;cursor:pointer;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.dpop.in{opacity:1;transform:none}
+.dpop small{display:block;font-size:10px;letter-spacing:.2em;color:var(--dim)}
+.dpop b{display:block;font-size:34px;letter-spacing:.04em;margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.dpop em{display:block;font-style:normal;font-size:10px;letter-spacing:.24em}
+.dpop.late{border-color:var(--bad)}.dpop.late b,.dpop.late em{color:var(--bad)}
+.dpop.early{border-color:var(--good)}.dpop.early b,.dpop.early em{color:var(--good)}
+.dpop.even{border-color:var(--accent)}.dpop.even b,.dpop.even em{color:var(--accent)}
+body.light .dpop{background:rgba(236,238,240,.98)}
 .toast.ok{border-left-color:var(--good)}.toast.warn{border-left-color:var(--warn)}.toast.bad{border-left-color:var(--bad)}
 dialog{background:var(--bg2);color:var(--fg);border:1px solid var(--line2)}
 dialog::backdrop{background:rgba(0,10,14,.82)}

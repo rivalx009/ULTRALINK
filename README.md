@@ -1,5 +1,11 @@
 # ULTRALINK — cycling telemetry & comms  (v1.7)
 
+**New in v1.8 — escort ops & pacing (web only, no APK rebuild needed)**
+- **Escort telemetry removed** — escorts now share their position only. Escort cards and the selected-unit panel show position / distance / who they follow; the map marker stays.
+- **Off-course voice alarm** — a rider leaving the route triggers a looping cockpit-style voice ("WARNING. OFF COURSE. OFF COURSE. WARNING.", `public/off-course-alert.mp3`). It repeats until MASTER ALERT (or the M key) is pressed, and also stops when the rider is back on course.
+- **Sector finish vs target** — when a rider finishes a sector (or a lap) that has a target, a big pop-up shows e.g. **+12 seconds** (red, behind) or **-12 seconds** (green, ahead). The rider phone shows it too. Every result is recorded per mission (stored on the escort device), and you can see it in the sector board ("RESULTS VS TARGET"), the sector card on the map, and the log. Results are cleared when the clock is reset.
+- **Advised speed (lead rider)** — once the clock is running with an overall target, the escort works out the speed the ★ lead rider should ride to finish exactly on target. It uses the same constant-effort physics as the auto sector targets, so it is higher on descents and lower on climbs over the next 300 m. It is shown in the top bar, on the lead card, in the rider pop-up and in the selected-unit panel. Green = on pace, red = too slow, "TARGET OUT OF REACH" / "TARGET TIME PASSED" when the target can no longer be met.
+
 **New in v1.7 — native radio in the Android app (rider mode)**
 - Push-to-talk now runs inside the app's background service instead of the web page, so the radio keeps working with the **screen off and battery saver on** (fixes PTT going silent until the app was reopened).
 - The app opens its own audio-only link to the relay for the rider's unit (it never shows as an extra unit). Voice uses the existing relay format (12 kHz mu-law), so escorts need no update.

@@ -87,5 +87,23 @@
   global.UL.saveFile = saveFile;
   global.UL.widget = widget;
   global.UL.toast = toast;
+  /* big sector-result popup: "+12 seconds" red (late) / "-12 seconds" green (early). Stacks, auto-hides after ~6 s, tap to dismiss */
+  let dhost = null;
+  function deltaPop(title, d, sub, ms) {
+    if (!dhost) { dhost = document.createElement('div'); dhost.id = 'dpops'; document.body.appendChild(dhost); }
+    const r = Math.round(d), el = document.createElement('div');
+    el.className = 'dpop ' + (r > 0 ? 'late' : r < 0 ? 'early' : 'even');
+    el.innerHTML = '<small></small><b></b><em></em>';
+    el.querySelector('small').textContent = title || '';
+    el.querySelector('b').textContent = global.UL.deltaWords ? UL.deltaWords(d) : (r > 0 ? '+' : '') + r + ' seconds';
+    el.querySelector('em').textContent = sub || (r > 0 ? 'BEHIND TARGET' : r < 0 ? 'AHEAD OF TARGET' : 'ON TARGET');
+    el.onclick = () => el.remove();
+    dhost.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 350); }, ms || 6000);
+    while (dhost.children.length > 3) dhost.firstChild.remove();
+  }
+  global.UL.deltaPop = deltaPop;
+
   global.UL.confirm = confirmBox;
 })(window);

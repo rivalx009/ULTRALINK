@@ -162,6 +162,12 @@
   .advice.HIGH{border-left-color:var(--good)}.advice.MEDIUM{border-left-color:var(--warn)}.advice.LOW{border-left-color:var(--dim)}
   .advice b{letter-spacing:.14em}
   .notes{font-size:10px;line-height:1.65;color:var(--dim);margin:8px 0 0;padding-left:16px}
+  .uadv{display:flex;align-items:baseline;gap:8px;padding:5px 8px;margin-top:4px;border:1px solid var(--line2);font-size:9px;letter-spacing:.14em;color:var(--dim)}
+  .uadv b{font-size:16px;color:var(--fg);letter-spacing:.02em;font-variant-numeric:tabular-nums}.uadv b small{font-size:8px;color:var(--dim)}
+  .uadv em{font-style:normal;margin-left:auto;font-size:8px}.uadv .ok{color:var(--good)}.uadv .bad{color:var(--bad)}
+  .padv{display:flex;align-items:center;gap:12px;padding:8px 10px;border:1px solid var(--line2);border-left:3px solid var(--accent);font-size:9px;letter-spacing:.14em;line-height:1.6}
+  .padv b{font-size:26px;letter-spacing:.02em;font-variant-numeric:tabular-nums}.padv b small{font-size:9px;color:var(--dim)}
+  .padv.ok{border-left-color:var(--good)}.padv.ok b{color:var(--good)}.padv.bad{border-left-color:var(--bad)}.padv.bad b{color:var(--bad)}
   .seclr{display:grid;grid-template-columns:10px 1fr auto auto;gap:6px;font-size:10px;padding:3px 0;align-items:center;font-variant-numeric:tabular-nums}
   .seclr i{width:10px;height:10px;display:block}
 
@@ -405,6 +411,7 @@
     <button id="btnTarget" class="ghost">TARGET</button>
     <span class="tag" id="mTarget">TARGET --:--</span>
     <span class="tag" id="mDelta">DELTA --</span>
+    <span class="tag" id="mAdv" style="display:none">ADVISED --</span>
     <button id="btnSched" class="ghost" title="Departure countdown">T-MINUS</button><span class="tag" id="mStart">NO SCHEDULE</span>
     <span class="sp"></span>
     <button id="btnWind" class="ghost" title="Wind source and manual override"><span id="windTag">WIND --</span></button>
