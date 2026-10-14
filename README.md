@@ -1,5 +1,28 @@
 # ULTRALINK — cycling telemetry & comms  (v1.7)
 
+**New in v1.11 — laptop Bluetooth / USB microphone selection and physical PTT**
+
+In **Escort → Settings → Audio**, scroll to **BLUETOOTH / USB AUDIO & PHYSICAL PTT**.
+
+1. Pair the microphone and PTT accessory in Windows/macOS Bluetooth settings first, or connect its USB receiver. ULTRALINK does not perform Bluetooth pairing or open proprietary radio protocols.
+2. Press **ALLOW MIC ACCESS / REFRESH DEVICES**, then select the desired **Audio input**. A saved explicit device is requested with an exact microphone constraint; the app will not silently substitute the laptop's microphone if that device is missing. Selecting a new mic releases local PTT, replaces the audio track and cleans up the previous capture pipeline.
+3. Use **TEST MIC LEVEL** to check incoming signal locally. No audio is transmitted during this test. Playback output still follows the operating system/browser output choice; there is no speaker-output selector in this release.
+4. Press **LEARN PTT BUTTON**, then press and release the physical button. Learning does not transmit. **TEST BUTTON — NO TX** checks press/release recognition without opening the radio. Escape cancels learning; a timeout reports when no usable key event arrives.
+5. Choose **Hold to talk** for buttons that provide both press and release events, or **Toggle** for discrete button pulses (press to open, press again to close). Browser-readable media keys default to Toggle when learned. Clear the learned button to restore the ordinary Space/on-screen workflow; RESET ALL also resets the hardware profile and mic selection.
+6. Close Settings, keep the ULTRALINK window focused, and test with a connected rider. The learned physical button broadcasts to **all units**. It overrides any shortcut with the same key code; configure an unused key where possible. Normal per-unit keyboard PTT controls remain available when not overridden.
+
+**Safety and scope**
+
+- Physical PTT closes on window blur/page hiding, link loss, selected-mic loss, or the 60-second watchdog. Reconnection can reacquire the same saved microphone, but never reopens transmission automatically. Hardware PTT is paused in Emergency Frequency mode and cannot start from a typing field or open dialog.
+- Supported accessories must expose a standard microphone/audio input and/or an OS keyboard/HID interface whose key events reach the browser. A radio-only accessory, proprietary GATT/PTT button, microphone-mute-only button, or OS-intercepted media control is **not automatically supported**. No global/background keyboard hook or universal Bluetooth SDK is claimed. Microphone selection does not prove that the button is supported; test them separately.
+- Device IDs and hardware mappings are local to this browser/profile/site origin, not the mission. Permission changes, browser resets or a different site URL may require selecting/learning again. Browser microphone access requires the existing secure-context/permission setup.
+- The new hardware setup panel targets the **laptop escort console**. Existing rider/COMMS controls are retained; native Android Bluetooth audio routing is not replaced by this laptop panel.
+
+**Deploy:** update the repository files (especially `ul.js`, `escort.js`, `escort.html`, `ul-hardware.js`, `ul-hardware.css` and `sw.js`), redeploy, then reload the laptop console. Existing desktop shells loading the hosted web UI do not need rebuilding for these web controls. The previous Android native emergency-speech fallback still requires its APK build as documented below; no new installer/APK is built here.
+
+**Tests:** `node test-v111.js` covers exact mic constraints, switching/cleanup, persistence, local mic testing, learning, dry tests, hold/toggle/pulse input, disconnection/reconnection, explicit default fallback, focus/mode guards and the watchdog. Hardware inventory and button events are simulated; microphone streams use Chromium's fake audio device. No physical Bluetooth accessory has been paired or tested in this environment. Check the actual device, PTT release behavior and audio with riders before an event.
+
+
 **New in v1.10 — revised effects and Emergency Frequency**
 
 - OFF COURSE and MECHANICAL now use the supplied `fa_18_rwr_combat.mp3` sound effect under their existing voice phrases. RIDER DOWN is unchanged.

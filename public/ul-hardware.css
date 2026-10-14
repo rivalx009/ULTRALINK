@@ -1,0 +1,13 @@
+.hw-panel{border:1px solid #ffb000;background:rgba(8,20,24,.95);margin-top:18px;padding:16px;font:14px/1.5 var(--mono);color:#eafcff}
+.hw-panel h3{font-size:16px;letter-spacing:.06em;margin-bottom:8px}.hw-note{font-size:14px;line-height:1.5;color:#b8d3da;margin:8px 0 12px;overflow-wrap:anywhere}
+.hw-panel label{font-size:14px;letter-spacing:.03em;color:#eafcff;margin:12px 0 6px}.hw-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.hw-panel select{width:100%;font-size:14px;min-height:44px;letter-spacing:0}.hw-panel button{font-size:13px;min-height:44px;padding:8px 12px;letter-spacing:.03em}
+.hw-panel button:focus-visible,.hw-panel select:focus-visible{outline:3px solid #00e5ff;outline-offset:2px}.hw-panel button[aria-pressed="true"]{border-color:#ffb000;color:#fff;background:#453208}
+.hw-status{margin:8px 0;font-size:14px;line-height:1.5;overflow-wrap:anywhere;color:#ffd7de}.hw-key{font-size:16px;color:#ffb000;overflow-wrap:anywhere}
+.hw-panel meter{width:100%;height:22px}.hw-divider{border-top:1px solid #1d4d59;padding-top:12px;margin-top:16px}
+body.light .hw-panel{background:#d9dde0;color:#222}body.light .hw-panel label{color:#222}body.light .hw-note{color:#424c50}body.light .hw-status{color:#8a182f}body.light .hw-key{color:#805000}
+/* Native dialog intrinsic sizing must not be driven by long device/option labels. */
+#dlgSet{width:min(640px,calc(100vw - 24px));min-width:0;padding:0}
+#dlgSet>div{min-width:0}#setBody{min-width:0;max-width:100%}#dlgSet select{min-width:0;max-width:100%}
+.hw-panel{min-width:0;max-width:100%}.hw-panel h3{overflow-wrap:anywhere}.hw-panel button{max-width:100%;white-space:normal}
+@media(max-width:760px){#setBody .srow{flex-wrap:wrap}#setBody .srow select{width:100%}#dlgSet>div{padding:14px!important}}

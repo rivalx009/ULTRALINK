@@ -186,6 +186,8 @@
       super();
       opts = opts || {};
       this.link = link; this.peers = new Map(); this.stream = null; this.track = null; this.micError = null;
+      this.inputDeviceId = ''; this._micGeneration = 0;
+      try { this.inputDeviceId = localStorage.ulAudioInput || ''; } catch(e) {}
       this.selfId = null; this.known = new Set(); this.mode = opts.mode || 'auto';
       this.keyed = false; this.targets = 'all'; this.relayTargets = null; this.muted = new Set();
       this.sid = Math.random().toString(36).slice(2, 10);
@@ -206,25 +208,64 @@
       if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
       return this.ctx;
     }
+    inputConstraints(id) {
+      return { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, ...(id ? {deviceId:{exact:id}} : {}) } };
+    }
+    clearMicCapture() {
+      this._capOn = false;
+      for (const node of [this._micSource,this._proc,this._micMute]) { try { node && node.disconnect(); } catch(e) {} }
+      if (this._proc) this._proc.onaudioprocess = null;
+      this._micSource = this._proc = this._micMute = null;
+    }
+    installMic(stream, id) {
+      const old = this.stream; this.clearMicCapture();
+      this.stream = stream; this.track = stream.getAudioTracks()[0]; this.inputDeviceId = id; this.micError = null;
+      this.track.enabled = true;
+      const track = this.track;
+      track.addEventListener('ended', () => {
+        if (this.track !== track) return;
+        this.release(); this.emit('micstate',{ready:false,reason:'MICROPHONE DISCONNECTED',id:this.inputDeviceId});
+        if (document.visibilityState === 'visible') this.recover();
+      });
+      this.peers.forEach(p => { p.sent = undefined; this.gatePeer(p); });
+      if (old && old !== stream) old.getTracks().forEach(t=>t.stop());
+      this.emit('micstate',{ready:true,label:track.label || 'Microphone',id});
+      return stream;
+    }
     mic() {
-      if (this.stream) return Promise.resolve(this.stream);
+      if (this.stream && this.track?.readyState === 'live') return Promise.resolve(this.stream);
       if (!this._micP) {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { this.micError = 'NO AUDIO API (needs HTTPS)'; return Promise.reject(new Error(this.micError)); }
-        this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-          .then(s => { this.stream = s; this.track = s.getAudioTracks()[0]; this.track.enabled = true; this.track.addEventListener('ended', () => { if (document.visibilityState === 'visible') this.recover(); }); this.peers.forEach(p => this.gatePeer(p)); return s; })
-          .catch(e => { this._micP = null; this.micError = e.message || 'MIC DENIED'; throw e; });
+        if (!navigator.mediaDevices?.getUserMedia) { this.micError='NO AUDIO API (needs HTTPS)';return Promise.reject(new Error(this.micError)); }
+        const generation = ++this._micGeneration, id = this.inputDeviceId;
+        this._micP = navigator.mediaDevices.getUserMedia(this.inputConstraints(id)).then(stream=>{
+          if (generation !== this._micGeneration) { stream.getTracks().forEach(t=>t.stop());throw new Error('MIC REQUEST SUPERSEDED'); }
+          return this.installMic(stream,id);
+        }).catch(e=>{if(generation===this._micGeneration){this._micP=null;this.micError=e.message||'MIC DENIED';this.emit('micstate',{ready:false,reason:this.micError,id});}throw e;});
       }
       return this._micP;
     }
-    /** after a phone call / app switch some phones kill the mic track: get a fresh one and re-attach it everywhere */
+    invalidateMicrophone(reason) {
+      this.release();++this._micGeneration;this.clearMicCapture();
+      if(this.stream)this.stream.getTracks().forEach(t=>t.stop());this.stream=null;this.track=null;this._micP=null;this.micError=reason;
+      this.emit('micstate',{ready:false,reason,id:this.inputDeviceId});
+    }
+    async selectMicrophone(id = '') {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('MICROPHONE SELECTION REQUIRES HTTPS / AUDIO PERMISSION');
+      this.release();const generation = ++this._micGeneration;
+      const request = navigator.mediaDevices.getUserMedia(this.inputConstraints(id));
+      this._micP = request.then(stream=>{
+        if(generation!==this._micGeneration){stream.getTracks().forEach(t=>t.stop());throw new Error('MIC REQUEST SUPERSEDED');}
+        this.installMic(stream,id);try{localStorage.ulAudioInput=id;}catch(e){}return stream;
+      }).catch(e=>{if(generation===this._micGeneration)this._micP=null;throw e;});
+      return this._micP;
+    }
+    /** Recover the selected input only; it must not reopen PTT or select a different mic. */
     recover() {
       this.audioCtx();
-      if (!this.track || this.track.readyState !== 'ended') return Promise.resolve(false);
-      try { this.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
-      if (this._proc) { try { this._proc.disconnect(); } catch (e) {} this._proc = null; }
-      this.stream = null; this.track = null; this._micP = null;
-      this.peers.forEach(p => { p.sent = undefined; });
-      return this.mic().then(() => { this.applyGate(); this.emit('recovered'); return true; }).catch(() => false);
+      if (this.track?.readyState === 'live') return Promise.resolve(false);
+      this.clearMicCapture();this.stream=null;this.track=null;this._micP=null;
+      this.peers.forEach(p=>{p.sent=undefined;});
+      return this.mic().then(()=>{this.applyGate();this.emit('recovered');return true;}).catch(()=>false);
     }
     /* ---- roster sync: create peers where I am the initiator, drop peers that left ---- */
     sync(ids) {
@@ -320,16 +361,17 @@
       this.targets = targets || 'all'; this.keyed = false; this._relaySig = null;
       const list = [...this.known].filter(id => this.isTarget(id));
       const relay = list.filter(id => !this.p2pUp(id));
-      this.link.send({ t: 'ptt', state: 'start', targets: this.targets, relay });
+      this._pttAnnounced = true; this.link.send({ t: 'ptt', state: 'start', targets: this.targets, relay });
       this._relaySig = relay.slice().sort().join(','); this.relayTargets = relay;
       clearTimeout(this._open);
       this._open = setTimeout(() => { this._openedAt = Date.now(); this.keyed = true; this.applyGate(); }, delay == null ? 120 : delay);
       if (!this.stream) this.mic().then(() => this.keyed && this.applyGate()).catch(() => this.emit('micerror', this.micError));
     }
     release() {
-      clearTimeout(this._open);
+      clearTimeout(this._open); this._open = null;
       const was = this.keyed; this.keyed = false; this.applyGate(); this.setCapture(false);
-      this.link.send({ t: 'ptt', state: 'end', targets: this.targets });
+      if (this._pttAnnounced) this.link.send({ t: 'ptt', state: 'end', targets: this.targets });
+      this._pttAnnounced = false;
       return was;
     }
     key(open) { open ? this.transmit(this.targets) : this.release(); }   // legacy
@@ -352,7 +394,7 @@
         pos = t - inp.length; if (pos < 0) pos = 0;
         this.stats.relayTx += out.length; this.link.sendBinary(out.buffer);
       };
-      src.connect(proc); proc.connect(mute); mute.connect(c.destination); this._proc = proc;
+      src.connect(proc); proc.connect(mute); mute.connect(c.destination); this._proc = proc; this._micSource = src; this._micMute = mute;
     }
     onRelayAudio(buf) {
       const u8 = new Uint8Array(buf); if (u8.length < 6) return;

@@ -15,6 +15,11 @@
   const isPhone = () => innerWidth <= 760;
   const INCIDENTS = new Map(), seenIncidents = new Set(), pendingAcks = new Set();
   const OFF = new Map();               // rider id -> off-route alert state {n, back, on, ack, dist, since, beep}
+  const hardware = new UL.HardwarePTT({
+    getVoice:()=>voice, start:()=>txStart('all','ALL UNITS'), stop:()=>txEnd(),
+    canTransmit:()=>opsStarted&&!ended&&!emergencyMode&&link.ready, transmitting:()=>pttOpen
+  });
+  link.on('close',()=>hardware.release('LINK LOST — PTT RELEASED'));
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
   /* ================================================================== BOOT */
@@ -324,7 +329,7 @@
   });
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCdSec = null; });
   link.on('mission.ended', m => {
-    ended = true; INCIDENTS.clear(); pendingAcks.clear(); OFF.clear(); renderOff(); m.mode === 'close' ? fx.success() : fx.abort();
+    ended = true; hardware.release('MISSION ENDED'); INCIDENTS.clear(); pendingAcks.clear(); OFF.clear(); renderOff(); m.mode === 'close' ? fx.success() : fx.abort();
     $('dlgEnded').innerHTML = `<div style="padding:22px;text-align:center">
       <h3 style="color:var(--bad);letter-spacing:.3em">${esc(m.reason)}</h3>
       <div class="muted" style="font-size:11px;margin-top:10px">Declared by ${esc(m.by)}. All units have been notified and the mission code is now invalid.</div>
@@ -839,8 +844,9 @@
   /* ================================================== VOICE + PTT KEYS */
   function initVoice() {
     let mode = 'auto'; try { mode = localStorage.ulVoice === 'relay' ? 'relay' : 'auto'; } catch (e) {}
-    voice = new UL.VoiceNet(link, { mode });
+    voice = new UL.VoiceNet(link, { mode }); hardware.attachVoice(voice);
     voice.selfId = me;
+    voice.on('micstate', s => { if (!s.ready) { log('SYS', s.reason + ' · PTT CLOSED', '#ff4d6d'); UL.toast('MICROPHONE UNAVAILABLE — CHECK AUDIO SETTINGS', 'bad', 5000); } });
     voice.on('blocked', () => $('audioPrompt').classList.add('show'));
     voice.on('unblocked', () => $('audioPrompt').classList.remove('show'));
     voice.on('micerror', e => { log('SYS', 'MIC UNAVAILABLE — ' + (e || 'DENIED') + ' · PTT TX OFF', '#ff4d6d'); UL.toast('MICROPHONE BLOCKED — ALLOW IT IN THE BROWSER', 'bad', 5000); });
@@ -923,7 +929,7 @@
     $('setTabs').querySelectorAll('button').forEach(b => b.onclick = () => {
       $('setTabs').querySelectorAll('button').forEach(x => x.className = ''); b.className = 'primary'; renderSettings(b.dataset.t);
     });
-    $('setReset').onclick = async () => { if (await UL.confirm('RESET SETTINGS', 'Reset every appearance, audio and keybinding setting to defaults?', { danger: true, yes: 'RESET' })) { cfg.reset(); applyLiveSettings(); renderSettings('appearance'); } };
+    $('setReset').onclick = async () => { if (await UL.confirm('RESET SETTINGS', 'Reset every appearance, audio and keybinding setting to defaults?', { danger: true, yes: 'RESET' })) { cfg.reset(); await hardware.reset(); applyLiveSettings(); renderSettings('appearance'); } };
     renderSettings('appearance');
   }
   const row = (label, control) => `<div class="srow"><label>${label}</label>${control}</div>`;
@@ -955,6 +961,7 @@
       h += row('Route PTT audio', `<select id="sVoice"><option value="auto" ${!voice || voice.mode !== 'relay' ? 'selected' : ''}>Auto — peer-to-peer, relay fallback</option><option value="relay" ${voice && voice.mode === 'relay' ? 'selected' : ''}>Relay only (strict firewalls / hotspots)</option></select>`);
       h += `<div class="hint" style="margin-top:6px">${vs ? `Mic: <b>${vs.mic ? 'READY' : 'OFF' + (vs.micError ? ' — ' + esc(vs.micError) : '')}</b> · ${vs.p2p} of ${vs.total} units on direct P2P, ${vs.relay} via relay.` : 'Status appears once the mission is live.'} Auto mode switches a unit to the relay by itself when a direct link cannot be made.</div>`;
     }
+    if (tab === 'audio') h += '<div id="hardwareMount"></div>';
     if (tab === 'keys') {
       h += `<div class="hint" style="margin-bottom:8px">Click a key, then press the key you want. Unit slots are assigned in roster order: riders first, then escorts.</div>`;
       [['pttAll', 'PTT — all units'], ['follow', 'Toggle follow'], ['returnLead', 'Return to lead rider'], ['refreshGps', 'Refresh live GPS (all units)'], ['master', 'Master alert (acknowledge all warnings)'], ['clock', 'Mission clock start/stop'], ['layer', 'Cycle map layer'], ['settings', 'Open settings']].forEach(([k, lbl]) => h += row(lbl, `<div class="keycap" data-k="${k}">${UL.KEY_LABEL(v.keys[k])}</div>`));
@@ -980,7 +987,8 @@
       list.forEach(u => h += row(`<span class="swatch" style="background:${cfg.colorFor(u.callsign, u.color)}"></span> ${esc(u.callsign)} <span class="muted">${u.role}</span>`,
         `<input type="color" data-uc="${esc(u.callsign)}" value="${cfg.colorFor(u.callsign, u.color)}"><button class="ghost" data-ucr="${esc(u.callsign)}" style="font-size:9px;padding:5px 7px">AUTO</button>`));
     }
-    $('setBody').innerHTML = h;
+    hardware.unmount(); $('setBody').innerHTML = h;
+    if(tab==='audio')hardware.mount($('hardwareMount'));
     $('setBody').querySelectorAll('[data-s]').forEach(el => {
       const key = el.dataset.s;
       const handler = () => {
@@ -1180,7 +1188,7 @@
   const emergencySent = new Map();
   function emergencyId() { return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const n=Math.random()*16|0;return(c==='x'?n:(n&3|8)).toString(16);}); }
   function setEmergencyFrequency(on) {
-    if (on) txEnd(); emergencyMode = !!on;
+    if (on) { hardware.release('EMERGENCY FREQUENCY — PHYSICAL PTT PAUSED'); txEnd(); } emergencyMode = !!on;
     document.body.classList.toggle('emergency-mode', emergencyMode);
     $('emergencyPanel').classList.toggle('show', emergencyMode); $('btnEmergencyFrequency').setAttribute('aria-pressed', String(emergencyMode));
     $('pttBtn').disabled = emergencyMode;
@@ -1362,5 +1370,5 @@
   startup();
   window.__ul = { get units() { return units; }, get sectors() { return sectors; }, wind, G, get sel() { return sel; }, selectUnit,
     get voice() { return voice; }, get follow() { return follow; }, get lead() { return leadName; }, setLead, returnTo, openSector: openOpsSector, closeSector: closeOpsSector,
-    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, incidents: INCIDENTS, masterAck, get me() { return me; }, get emergencyMode() { return emergencyMode; }, refreshGps, get power() { return power; }, setTab };
+    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, incidents: INCIDENTS, masterAck, get me() { return me; }, get emergencyMode() { return emergencyMode; }, hardware, refreshGps, get power() { return power; }, setTab };
 })();
