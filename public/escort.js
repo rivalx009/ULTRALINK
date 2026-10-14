@@ -893,6 +893,7 @@
     if (e.code === K.pttAll || K.units.includes(e.code)) txEnd();
   });
   function txStart(targets, label) {
+    if (emergencyMode) return;
     if (pttOpen || !voice) return;
     pttOpen = true; fx.pttOpen(); $('pttBtn').classList.add('on'); $('map').classList.add('tx');
     voice.transmit(targets, 140);        // sends the PTT banner now, opens the mic just after the key beep (so the beep is not transmitted)
@@ -1174,8 +1175,59 @@
     b.textContent = '◎ RETURN TO ' + (isLead(u) ? '★ ' : '') + u.callsign;
   }
 
+  /* ============================================ EMERGENCY FREQUENCY */
+  let emergencyMode = false, emergencySeq = 0, emergencyLast = null;
+  const emergencySent = new Map();
+  function emergencyId() { return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const n=Math.random()*16|0;return(c==='x'?n:(n&3|8)).toString(16);}); }
+  function setEmergencyFrequency(on) {
+    if (on) txEnd(); emergencyMode = !!on;
+    document.body.classList.toggle('emergency-mode', emergencyMode);
+    $('emergencyPanel').classList.toggle('show', emergencyMode); $('btnEmergencyFrequency').setAttribute('aria-pressed', String(emergencyMode));
+    $('pttBtn').disabled = emergencyMode;
+    if (map) setTimeout(()=>map.invalidateSize(), 50);
+    if (emergencyMode) { $('emergencyText').focus(); log('SYS','EMERGENCY FREQUENCY ACTIVE — MICROPHONE BYPASS','#ff4d6d'); }
+    else log('SYS','NORMAL RADIO MODE RESTORED','#7cff5a');
+  }
+  function renderEmergencyReceipt(eventId) {
+    const msg = emergencySent.get(eventId); if (!msg || eventId !== emergencyLast) return;
+    if (!msg.recipients) { $('emergencyStatus').textContent = 'SENDING TO RELAY…'; return; }
+    if (!msg.recipients.length) { $('emergencyStatus').textContent = 'NOT DELIVERED — NO RIDERS CONNECTED. Your message has been kept.'; return; }
+    const played = [...msg.states.values()].filter(v=>v==='played').length;
+    const failed = [...msg.states.values()].filter(v=>['unavailable','blocked','muted','failed'].includes(v)).length;
+    $('emergencyStatus').textContent = 'SENT TO ' + msg.recipients.length + ' CONNECTED RIDER(S) · PLAYBACK COMPLETED ' + played + '/' + msg.recipients.length +
+      (failed ? ' · AUDIO ISSUE: ' + [...msg.states.entries()].filter(([,v])=>['unavailable','blocked','muted','failed'].includes(v)).map(([id,v])=>(msg.recipients.find(r=>r.id===id)?.callsign || 'RIDER') + ' (' + v.toUpperCase() + ')').join(', ') : played === msg.recipients.length ? ' · COMPLETE' : ' · AWAITING REMAINING PLAYBACK REPORTS');
+  }
+  function sendEmergency(text, preset = null) {
+    if (!emergencyMode || ended) return;
+    if (!text.trim()) { $('emergencyStatus').textContent = 'TYPE A MESSAGE FIRST.'; return; }
+    if (text.length > 500) { $('emergencyStatus').textContent = 'MESSAGE TOO LONG — MAXIMUM 500 CHARACTERS.'; return; }
+    if (!link.ready || navigator.onLine === false) { $('emergencyStatus').textContent = 'NOT SENT — ESCORT LINK OFFLINE. Your message has been kept.'; return; }
+    const eventId = emergencyId(), seq = ++emergencySeq;
+    emergencySent.set(eventId,{text,preset,seq,states:new Map(),recipients:null}); emergencyLast = eventId;
+    while (emergencySent.size > 30) emergencySent.delete(emergencySent.keys().next().value);
+    link.send({t:'emergency.say',eventId,text,preset}); renderEmergencyReceipt(eventId);
+    log('EF TX',text,'#ffb000');
+    setTimeout(()=>{const m=emergencySent.get(eventId);if(m&&!m.recipients&&emergencyLast===eventId)$('emergencyStatus').textContent='DELIVERY UNCONFIRMED — CHECK THE CONNECTION. Do not assume riders received this message.';},5000);
+  }
+  link.on('emergency.receipt', m => {
+    const msg = emergencySent.get(m.eventId); if (!msg) return;
+    msg.recipients = m.recipients || [];
+    if (msg.recipients.length && !msg.preset && $('emergencyText').value === msg.text) $('emergencyText').value = '';
+    renderEmergencyReceipt(m.eventId);
+  });
+  link.on('emergency.playback', m => { const msg=emergencySent.get(m.eventId); if(!msg)return; msg.states.set(m.riderId,m.state);renderEmergencyReceipt(m.eventId); });
+  function initEmergencyFrequency() {
+    $('btnEmergencyFrequency').onclick = () => { if (emergencyMode) { $('emergencyText').focus(); return; } $('dlgEmergencyConfirm').showModal(); };
+    $('emergencyCancel').onclick = () => $('dlgEmergencyConfirm').close();
+    $('emergencyActivate').onclick = () => { $('dlgEmergencyConfirm').close(); setEmergencyFrequency(true); };
+    $('emergencyExit').onclick = () => setEmergencyFrequency(false);
+    $('emergencyForm').onsubmit = e => { e.preventDefault(); sendEmergency($('emergencyText').value); };
+    document.querySelectorAll('[data-emergency-preset]').forEach(b=>b.onclick=()=>sendEmergency(b.dataset.emergencyPreset,b.dataset.emergencyPreset));
+  }
+
   /* ============================================ ON-SCREEN PTT + ALERT BUTTONS */
   function initOpsExtras() {
+    initEmergencyFrequency();
     $('btnMaster').onclick = e => { e.stopPropagation(); masterAck(); };
     $('btnReturn').onclick = () => returnTo();
     document.querySelectorAll('.gpsbtn').forEach(b => b.onclick = () => refreshGps());
@@ -1310,5 +1362,5 @@
   startup();
   window.__ul = { get units() { return units; }, get sectors() { return sectors; }, wind, G, get sel() { return sel; }, selectUnit,
     get voice() { return voice; }, get follow() { return follow; }, get lead() { return leadName; }, setLead, returnTo, openSector: openOpsSector, closeSector: closeOpsSector,
-    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, incidents: INCIDENTS, masterAck, get me() { return me; }, refreshGps, get power() { return power; }, setTab };
+    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, incidents: INCIDENTS, masterAck, get me() { return me; }, get emergencyMode() { return emergencyMode; }, refreshGps, get power() { return power; }, setTab };
 })();

@@ -42,7 +42,7 @@
     osc.start(t0); osc.stop(t0 + dur + 0.02);
   }
   /* audio clips, decoded once into the shared audio context */
-  const CLIPS = { open: { url: 'radio-open.mp3' }, offCourse: { url: 'off-course-alert.mp3' }, riderDown: { url: 'rider-down-alert.mp3' }, mechanical: { url: 'mechanical-alert.mp3' } };
+  const CLIPS = { open: { url: 'radio-open.mp3' }, offCourse: { url: 'off-course-alert.mp3' }, riderDown: { url: 'rider-down-alert.mp3' }, mechanical: { url: 'mechanical-alert.mp3' }, emergencyYes: { url: 'emergency-yes.mp3' }, emergencyNo: { url: 'emergency-no.mp3' }, emergencyUnderstood: { url: 'emergency-understood.mp3' } };
   function loadClip() {
     if (!ctx) return;
     Object.values(CLIPS).forEach(k => {
@@ -114,6 +114,19 @@
     },
     get alarmOn() { return alarm.on; },
     get alarmKind() { return alarm.on ? alarm.kind : null; },
+    async emergencyPreset(word) {
+      const key = { YES:'emergencyYes', NO:'emergencyNo', UNDERSTOOD:'emergencyUnderstood' }[word];
+      const c = ensure(); if (!c || !key || S.volume === 0) throw new Error('muted');
+      if (c.state === 'suspended') { try { await c.resume(); } catch(e) { throw new Error('blocked'); } }
+      if (c.state !== 'running') throw new Error('blocked');
+      const clip = CLIPS[key];
+      if (!clip.buf) { const response = await fetch(clip.url); if (!response.ok) throw new Error('failed'); clip.buf = await c.decodeAudioData(await response.arrayBuffer()); }
+      return new Promise((resolve, reject) => {
+        const src = c.createBufferSource(); src.buffer = clip.buf; src.connect(master);
+        src.onended = () => { src.disconnect(); resolve(); };
+        try { src.start(); } catch(e) { reject(e); }
+      });
+    },
     save() { if (!S.ui) return; tone(1040, 0.05, { type: 'triangle', gain: 0.14 }); tone(1560, 0.05, { type: 'triangle', gain: 0.14, at: 0.06 }); tone(2080, 0.1, { type: 'triangle', gain: 0.12, at: 0.12 }); },
     remove() { if (!S.ui) return; tone(600, 0.1, { to: 200, type: 'sawtooth', gain: 0.1 }); noise(0.1, { freq: 900, gain: 0.08, at: 0.02 }); },
 

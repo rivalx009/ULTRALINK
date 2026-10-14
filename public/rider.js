@@ -69,6 +69,75 @@
   addEventListener('offline', renderRiderAlerts);
   addEventListener('online', () => { sendPending(); renderRiderAlerts(); });
 
+  /* Emergency announcements do not use the escort microphone or rider microphone.
+     Browser speech handles typed text; the updated Android bridge is a native fallback. */
+  const emergencyInbox = [], emergencySeen = new Set();
+  let emergencyCurrent = null, emergencyLatest = null, emergencyUtterance = null;
+  const speechAvailable = () => typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
+  function emergencyReport(m, state) {
+    if (link.ready && !ended) link.send({t:'emergency.playback', eventId:m.eventId, state});
+    if (emergencyLatest?.eventId === m.eventId) $('emergencyRxStatus').textContent = {
+      queued:'VOICE QUEUED',playing:'PLAYING VOICE',played:'VOICE PLAYBACK COMPLETED',
+      unavailable:'SPEECH UNAVAILABLE — USE A SPEECH-CAPABLE BROWSER OR UPDATED ANDROID APP',
+      blocked:'AUDIO BLOCKED — TAP PLAY VOICE',muted:'SOUND DISABLED — ENABLE SOUND IN SETTINGS',failed:'VOICE FAILED — TAP PLAY TO RETRY'
+    }[state] || state;
+  }
+  function finishEmergency(state) {
+    const m = emergencyCurrent; if (!m) return;
+    clearTimeout(m.timer); emergencyReport(m,state); emergencyCurrent = null; emergencyUtterance = null;
+    setTimeout(playNextEmergency,0);
+  }
+  function nativeEmergencyReady() {
+    try { return SHELL && typeof SHELL.speakEmergency === 'function' && SHELL.emergencySpeechReady(); } catch(e) { return false; }
+  }
+  function playNextEmergency() {
+    if (emergencyCurrent || !emergencyInbox.length || ended) return;
+    const m = emergencyCurrent = emergencyInbox.shift();
+    m.timer = setTimeout(()=>finishEmergency('failed'),90000);
+    if (!fx.state.enabled || fx.state.volume === 0) return finishEmergency('muted');
+    if (m.preset) {
+      emergencyReport(m,'playing');
+      fx.emergencyPreset(m.preset).then(()=>{if(emergencyCurrent===m)finishEmergency('played');}).catch(e=>{if(emergencyCurrent===m)finishEmergency(['muted','blocked'].includes(e.message)?e.message:'failed');});
+      return;
+    }
+    if (nativeEmergencyReady()) {
+      try { SHELL.speakEmergency(m.eventId,m.text,fx.state.volume); } catch(e) { finishEmergency('failed'); }
+      return;
+    }
+    if (!speechAvailable()) return finishEmergency('unavailable');
+    const utterance = emergencyUtterance = new SpeechSynthesisUtterance(m.text);
+    utterance.lang = 'en-US'; utterance.rate = 1; utterance.volume = fx.state.volume;
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v=>v.lang==='en-US' && v.localService) || voices.find(v=>/^en(?:-|_|$)/i.test(v.lang));
+    if (voice) utterance.voice = voice;
+    utterance.onstart=()=>{if(emergencyCurrent===m)emergencyReport(m,'playing');};
+    utterance.onend=()=>{if(emergencyCurrent===m)finishEmergency('played');};
+    utterance.onerror=e=>{if(emergencyCurrent===m)finishEmergency(e.error==='not-allowed'?'blocked':'failed');};
+    try { speechSynthesis.speak(utterance); } catch(e) { finishEmergency('failed'); }
+  }
+  window.ULNative.onEmergencySpeech = (id,state) => {
+    if (!emergencyCurrent || emergencyCurrent.eventId !== id) return;
+    if (state === 'playing') emergencyReport(emergencyCurrent,state);
+    else finishEmergency(state === 'played' ? 'played' : 'failed');
+  };
+  link.on('emergency.say', m => {
+    if (ended || typeof m.text !== 'string' || m.text.length > 500 || emergencySeen.has(m.eventId)) return;
+    emergencySeen.add(m.eventId);if(emergencySeen.size>200)emergencySeen.delete(emergencySeen.values().next().value);
+    emergencyLatest = m; $('emergencyRxFrom').textContent='EMERGENCY FREQUENCY · '+m.callsign;
+    $('emergencyRxText').textContent=m.text; $('emergencyRx').classList.add('show');document.body.classList.add('emergency-receiving'); navigator.vibrate?.([80,50,80]);
+    if (emergencyInbox.length >= 20) { emergencyReport(m,'failed'); return; }
+    emergencyInbox.push(m); emergencyReport(m,'queued'); playNextEmergency();
+  });
+  $('emergencyReplay').onclick = () => {
+    if (!emergencyLatest || emergencyCurrent?.eventId === emergencyLatest.eventId || emergencyInbox.some(m=>m.eventId===emergencyLatest.eventId)) return;
+    fx.unlock(); emergencyInbox.push({...emergencyLatest});playNextEmergency();
+  };
+  $('emergencyDismiss').onclick = () => { $('emergencyRx').classList.remove('show'); document.body.classList.remove('emergency-receiving'); drawProfile(); };
+  function primeEmergencySpeech() {
+    if (!speechAvailable()) return;
+    try { const u = new SpeechSynthesisUtterance('');u.volume=0;speechSynthesis.speak(u); } catch(e) {}
+  }
+
   /* ---------------------------------------------------------- login form */
   $('code').value = localStorage.ulCode || '';
   $('callsign').value = localStorage.ulCallsign || '';
@@ -88,6 +157,7 @@
   ['code', 'callsign'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); deploy(); } }));
 
   async function deploy() {
+    primeEmergencySpeech();
     const code = $('code').value.trim().toUpperCase(), cs = $('callsign').value.trim().toUpperCase();
     if (code.length < 4 || !cs) return fail('CODE AND CALLSIGN REQUIRED');
     localStorage.ulCode = code; localStorage.ulCallsign = cs;
@@ -127,7 +197,7 @@
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCd = null; applyRoute(); });
   link.on('mission.clock', m => { if (m.clockStart && !clockStart && !m.clockStop) { fx.go(); UL.toast('MISSION CLOCK RUNNING — GO', 'ok'); } clockStart = m.clockStart; clockStop = m.clockStop; targetSec = m.targetSec; renderClock(); });
   link.on('mission.ended', m => {
-    ended = true; pendingAlerts = []; savePending(); clearTimeout(retryT); app('stopTracking');
+    ended = true; emergencyInbox.length=0; if(emergencyCurrent)clearTimeout(emergencyCurrent.timer); emergencyCurrent=null; if(speechAvailable())speechSynthesis.cancel(); try{SHELL?.stopEmergencySpeech?.();}catch(e){} pendingAlerts = []; savePending(); clearTimeout(retryT); app('stopTracking');
     m.mode === 'close' ? fx.success() : fx.abort();
     $('dlgEnd').innerHTML = `<div style="padding:22px;text-align:center">
       <div style="color:var(--bad);font-size:16px;letter-spacing:.3em">${m.reason}</div>

@@ -12,6 +12,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.media.AudioAttributes;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import org.json.JSONObject;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -62,6 +66,8 @@ public class MainActivity extends Activity {
     private static final int REQ_PERMS = 7, REQ_FILE = 8;
     static MainActivity current;
 
+    private TextToSpeech emergencySpeech;
+    private volatile boolean emergencySpeechReady = false;
     private WebView web;
     private SharedPreferences prefs;
     private ValueCallback<Uri[]> fileCb;
@@ -103,6 +109,20 @@ public class MainActivity extends Activity {
         web.setWebChromeClient(new Chrome());
         IntentFilter f = new IntentFilter(); f.addAction(ACTION_TALK); f.addAction(ACTION_STOP);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(actions, f, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(actions, f);
+        // Native TTS fallback for WebViews without browser speech synthesis.
+        emergencySpeech = new TextToSpeech(this, status -> ui.post(() -> {
+            if (status != TextToSpeech.SUCCESS || emergencySpeech == null) return;
+            int result = emergencySpeech.setLanguage(Locale.US);
+            emergencySpeechReady = result >= TextToSpeech.LANG_AVAILABLE;
+            emergencySpeech.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+            emergencySpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override public void onStart(String id) { emergencySpeechEvent(id, "playing"); }
+                @Override public void onDone(String id) { emergencySpeechEvent(id, "played"); }
+                @Override public void onError(String id) { emergencySpeechEvent(id, "failed"); }
+                @Override public void onError(String id, int code) { emergencySpeechEvent(id, "failed"); }
+            });
+        }));
         askPermissions();
         if (b != null) web.restoreState(b); else openStart();
     }
@@ -202,7 +222,21 @@ public class MainActivity extends Activity {
     }
 
     /* ------------------------------------------------------------------ JS bridge */
+    private void emergencySpeechEvent(String id, String state) {
+        js("window.ULNative&&ULNative.onEmergencySpeech&&ULNative.onEmergencySpeech("
+            + JSONObject.quote(id) + "," + JSONObject.quote(state) + ")");
+    }
     private class Bridge {
+        @JavascriptInterface public boolean emergencySpeechReady() { return emergencySpeechReady; }
+        @JavascriptInterface public void speakEmergency(String id, String text, float volume) {
+            if (id == null || !id.matches("[0-9a-fA-F-]{36}") || text == null || text.trim().isEmpty() || text.length() > 500) return;
+            ui.post(() -> {
+                if (!emergencySpeechReady || emergencySpeech == null) { emergencySpeechEvent(id, "failed"); return; }
+                Bundle params = new Bundle(); params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, Math.max(0f, Math.min(1f, volume)));
+                if (emergencySpeech.speak(text, TextToSpeech.QUEUE_ADD, params, id) == TextToSpeech.ERROR) emergencySpeechEvent(id, "failed");
+            });
+        }
+        @JavascriptInterface public void stopEmergencySpeech() { ui.post(() -> { if (emergencySpeech != null) emergencySpeech.stop(); }); }
         @JavascriptInterface public String getServer() { return server(); }
         @JavascriptInterface public String getPlatform() { return "android"; }
         @JavascriptInterface public void setServer(String url) {
@@ -282,6 +316,8 @@ public class MainActivity extends Activity {
         try { unregisterReceiver(actions); } catch (Exception e) { }
         if (current == this) current = null;
         stopService(new Intent(this, UltraService.class));
+        emergencySpeechReady = false;
+        if (emergencySpeech != null) { emergencySpeech.stop(); emergencySpeech.shutdown(); emergencySpeech = null; }
         web.destroy();
         super.onDestroy();
     }

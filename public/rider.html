@@ -13,6 +13,14 @@
   .cells .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:3px}
   #ptt{margin:auto 14px 14px;height:130px;border-radius:6px;border:2px solid var(--line2);background:radial-gradient(circle at 50% 35%,#0d2c36,#06151a);
        font-size:17px;letter-spacing:.3em;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;touch-action:none;user-select:none}
+  #emergencyRx{display:none;position:relative;flex-shrink:0;margin:8px 14px;background:#210911;border:2px solid #ff4d6d;padding:12px;color:#fff;max-height:36dvh;overflow:auto;font-size:14px;line-height:1.5}
+  #emergencyRx.show{display:block}#emergencyRx h3{font-size:13px;letter-spacing:.05em;line-height:1.5}
+  #emergencyRxText{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;font-size:16px}
+  #emergencyRxStatus{color:#ffd7de;font-size:12px;margin-bottom:8px}
+  #emergencyRx button{min-height:44px;font-size:12px;padding:8px 12px}
+  #emergencyRx button:focus-visible{outline:3px solid #00e5ff;outline-offset:2px}
+  body.emergency-receiving .hero,body.emergency-receiving #wProf{display:none}
+  @media(max-height:720px){body.emergency-receiving #wStats{display:none}}
   #riderEmergency{margin:0 14px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
   #riderEmergency button{min-height:64px;padding:12px 6px;border-radius:6px;font-size:15px;font-weight:700;letter-spacing:.08em;touch-action:manipulation;color:#fff}
   #btnRiderDown{background:#ae1731;border:2px solid #ff607d}
@@ -79,6 +87,7 @@
     <span id="cs" style="color:var(--accent)">—</span><span class="tag" id="src">GPS</span>
     <span class="tag" id="rClock">00:00</span><button id="rSet" class="ghost" style="padding:3px 7px;font-size:9px">⚙</button>
   </div>
+  <section id="emergencyRx" aria-label="Emergency frequency message" aria-live="polite"><h3 id="emergencyRxFrom">EMERGENCY FREQUENCY</h3><div id="emergencyRxText"></div><div id="emergencyRxStatus" role="status"></div><div class="row"><button id="emergencyReplay" type="button">PLAY / REPLAY VOICE</button><button id="emergencyDismiss" type="button">DISMISS</button></div></section>
   <div class="hero">
     <div class="sub">GROUND SPEED</div>
     <div class="big" id="spd">0.0<span style="font-size:15px;letter-spacing:.2em"> KM/H</span></div>
@@ -101,6 +110,7 @@
     <span class="tag" id="secChip">SECTOR --</span><span class="tag" id="rStart" style="display:none">T-</span><span class="tag" id="rTarget">TGT --</span>
   </div>
   <div class="rx" id="rx"></div>
+
   <dialog id="dlgR" style="background:var(--bg2);color:var(--fg);border:1px solid var(--line2);width:92vw;max-width:420px"></dialog>
   <dialog id="dlgEnd" style="background:var(--bg2);color:var(--fg);border:1px solid var(--bad);width:92vw;max-width:420px"></dialog>
   <div style="flex:1"></div>

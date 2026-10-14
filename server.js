@@ -205,6 +205,7 @@ function alertPosition(d) {
 function alertState(code) {
   broadcast(code, { t: 'rider.alert.state', alerts: missions[code]?.riderAlerts || [] });
 }
+const emergencyMessages = new Map(); // short-lived delivery/playback receipts, never mission persistence
 function handle(c, m) {
   switch (m.t) {
     case 'mission.create': {
@@ -327,6 +328,31 @@ function handle(c, m) {
       });
       if (changed) { persist(); alertState(c.mission); }
       else c.send({ t: 'rider.alert.state', alerts: mis.riderAlerts || [] });
+      break;
+    }
+    case 'emergency.say': {
+      if (!c.mission || c.role !== 'escort' || c.audioOf || !missions[c.mission]) return;
+      if (!/^[0-9a-f-]{36}$/i.test(m.eventId || '') || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 500) return;
+      if (m.preset != null && !['YES','NO','UNDERSTOOD'].includes(m.preset)) return;
+      if (m.preset && m.text !== m.preset) return;
+      const key = c.mission + ':' + m.eventId;
+      const prior = emergencyMessages.get(key);
+      if (prior) { if (prior.from === c.id) c.send({ t:'emergency.receipt', eventId:m.eventId, recipients:prior.recipients, duplicate:true }); break; }
+      const riders = peers(c.mission, c).filter(p => p.role === 'rider');
+      const receipt = { from:c.id, mission:c.mission, ts:Date.now(), recipients:riders.map(p=>({id:p.id,callsign:p.callsign})) };
+      emergencyMessages.set(key, receipt);
+      for (const [k,v] of emergencyMessages) if (Date.now()-v.ts > 600000) emergencyMessages.delete(k);
+      while (emergencyMessages.size > 256) emergencyMessages.delete(emergencyMessages.keys().next().value);
+      riders.forEach(p => p.send({ t:'emergency.say', eventId:m.eventId, from:c.id, callsign:c.callsign, text:m.text, preset:m.preset || null, ts:receipt.ts }));
+      c.send({ t:'emergency.receipt', eventId:m.eventId, recipients:receipt.recipients });
+      break;
+    }
+    case 'emergency.playback': {
+      if (!c.mission || c.role !== 'rider' || c.audioOf || !['queued','playing','played','unavailable','blocked','muted','failed'].includes(m.state)) return;
+      const receipt = emergencyMessages.get(c.mission + ':' + m.eventId);
+      if (!receipt || !receipt.recipients.some(p=>p.id===c.id)) return;
+      const escort = unitById(c.mission, receipt.from);
+      if (escort) escort.send({ t:'emergency.playback', eventId:m.eventId, riderId:c.id, callsign:c.callsign, state:m.state });
       break;
     }
     case 'signal': {           // WebRTC offer/answer/ice — targeted
