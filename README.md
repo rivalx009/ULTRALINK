@@ -1,6 +1,8 @@
 # ULTRALINK — cycling telemetry & comms  (v1.7)
 
-**New in v1.11 — laptop Bluetooth / USB microphone selection and physical PTT**
+This release preserves the exact v1.10 file paths. Hardware PTT code and styles are integrated into the existing `public/ul.js` and `public/ul.css`; no additional runtime files or dependencies are required.
+
+**New in v1.11.1 — laptop Bluetooth / USB microphone selection and physical PTT**
 
 In **Escort → Settings → Audio**, scroll to **BLUETOOTH / USB AUDIO & PHYSICAL PTT**.
 
@@ -18,9 +20,9 @@ In **Escort → Settings → Audio**, scroll to **BLUETOOTH / USB AUDIO & PHYSIC
 - Device IDs and hardware mappings are local to this browser/profile/site origin, not the mission. Permission changes, browser resets or a different site URL may require selecting/learning again. Browser microphone access requires the existing secure-context/permission setup.
 - The new hardware setup panel targets the **laptop escort console**. Existing rider/COMMS controls are retained; native Android Bluetooth audio routing is not replaced by this laptop panel.
 
-**Deploy:** update the repository files (especially `ul.js`, `escort.js`, `escort.html`, `ul-hardware.js`, `ul-hardware.css` and `sw.js`), redeploy, then reload the laptop console. Existing desktop shells loading the hosted web UI do not need rebuilding for these web controls. The previous Android native emergency-speech fallback still requires its APK build as documented below; no new installer/APK is built here.
+**Deploy:** update the repository files (especially `ul.js`, `ul.css`, `escort.js`, `escort.html` and `sw.js`), redeploy, then reload the laptop console. Existing desktop shells loading the hosted web UI do not need rebuilding for these web controls. The previous Android native emergency-speech fallback still requires its APK build as documented below; no new installer/APK is built here.
 
-**Tests:** `node test-v111.js` covers exact mic constraints, switching/cleanup, persistence, local mic testing, learning, dry tests, hold/toggle/pulse input, disconnection/reconnection, explicit default fallback, focus/mode guards and the watchdog. Hardware inventory and button events are simulated; microphone streams use Chromium's fake audio device. No physical Bluetooth accessory has been paired or tested in this environment. Check the actual device, PTT release behavior and audio with riders before an event.
+**Hardware QA:** A separate development-only test suite (not included in this v1.10-layout package) covers exact mic constraints, switching/cleanup, persistence, local mic testing, learning, dry tests, hold/toggle/pulse input, disconnection/reconnection, explicit default fallback, focus/mode guards and the watchdog. Hardware inventory and button events are simulated; microphone streams use Chromium's fake audio device. No physical Bluetooth accessory has been paired or tested in this environment. Check the actual device, PTT release behavior and audio with riders before an event.
 
 
 **New in v1.10 — revised effects and Emergency Frequency**
