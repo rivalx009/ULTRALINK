@@ -24,6 +24,51 @@
   };
   const app = (fn, ...a) => { try { APP && APP[fn] && APP[fn](...a); } catch (e) {} };
 
+  /* One-tap assistance alerts. A relay receipt is not an escort acknowledgement.
+     Pending events survive a reload and retry only after joining, with the same ID. */
+  let riderAlerts = [], pendingAlerts = [], alertJoined = false;
+  const alertLabel = k => k === 'riderDown' ? 'RIDER DOWN' : 'MECHANICAL';
+  const alertKey = () => 'ulPendingAlerts:' + (mission?.code || joinInfo?.code || '');
+  function savePending() { try { sessionStorage[alertKey()] = JSON.stringify(pendingAlerts); } catch (e) {} }
+  function renderRiderAlerts() {
+    const active = riderAlerts.filter(a => a.riderId === me && !a.ack);
+    ['riderDown', 'mechanical'].forEach(k => {
+      const on = active.some(a => a.kind === k) || pendingAlerts.some(a => a.kind === k);
+      $(k === 'riderDown' ? 'btnRiderDown' : 'btnMechanical').setAttribute('aria-pressed', String(on));
+    });
+    const lines = active.map(a => alertLabel(a.kind) + ' SENT TO RELAY · AWAITING ESCORT ACK');
+    pendingAlerts.forEach(a => lines.push(alertLabel(a.kind) + (link.ready && alertJoined && navigator.onLine !== false ? ' · SENDING…' : ' · NOT SENT — WAITING FOR CONNECTION')));
+    $('riderAlertStatus').textContent = lines.join(' / ');
+  }
+  function sendPending() {
+    if (!started || ended || !alertJoined || !link.ready || navigator.onLine === false) return;
+    pendingAlerts.forEach(a => link.send({ t: 'rider.alert', eventId: a.eventId, kind: a.kind, data: a.data || tel.state }));
+  }
+  function triggerRiderAlert(kind) {
+    if (!started || ended) return;
+    if (pendingAlerts.some(a => a.kind === kind) || riderAlerts.some(a => a.riderId === me && a.kind === kind && !a.ack)) return;
+    const eventId = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c === 'x' ? r : (r&3|8)).toString(16); });
+    const d = tel.state;
+    pendingAlerts.push({ eventId, kind, data: d?.lat != null ? { lat: d.lat, lon: d.lon, ts: d.ts, accuracy: d.accuracy } : null });
+    savePending(); fx.unlock(); navigator.vibrate?.([100, 50, 100]); sendPending(); renderRiderAlerts();
+  }
+  $('btnRiderDown').onclick = () => triggerRiderAlert('riderDown');
+  $('btnMechanical').onclick = () => triggerRiderAlert('mechanical');
+  link.on('close', () => { alertJoined = false; renderRiderAlerts(); });
+  link.on('rider.alert.state', m => {
+    const previous = riderAlerts;
+    riderAlerts = Array.isArray(m.alerts) ? m.alerts : [];
+    pendingAlerts = pendingAlerts.filter(p => !riderAlerts.some(a => a.riderId === me && (a.eventId === p.eventId || (!a.ack && a.kind === p.kind))));
+    savePending(); renderRiderAlerts();
+    riderAlerts.filter(a => a.riderId === me && a.ack && previous.some(p => p.eventId === a.eventId && !p.ack)).forEach(a => {
+      $('riderAlertStatus').textContent = alertLabel(a.kind) + ' ACKNOWLEDGED BY ' + a.ackBy + ( $('riderAlertStatus').textContent ? ' / ' + $('riderAlertStatus').textContent : '');
+      UL.toast(alertLabel(a.kind) + ' ACKNOWLEDGED BY ESCORT', 'ok', 5000);
+    });
+  });
+  setInterval(sendPending, 2500);
+  addEventListener('offline', renderRiderAlerts);
+  addEventListener('online', () => { sendPending(); renderRiderAlerts(); });
+
   /* ---------------------------------------------------------- login form */
   $('code').value = localStorage.ulCode || '';
   $('callsign').value = localStorage.ulCallsign || '';
@@ -82,7 +127,7 @@
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCd = null; applyRoute(); });
   link.on('mission.clock', m => { if (m.clockStart && !clockStart && !m.clockStop) { fx.go(); UL.toast('MISSION CLOCK RUNNING — GO', 'ok'); } clockStart = m.clockStart; clockStop = m.clockStop; targetSec = m.targetSec; renderClock(); });
   link.on('mission.ended', m => {
-    ended = true; clearTimeout(retryT); app('stopTracking');
+    ended = true; pendingAlerts = []; savePending(); clearTimeout(retryT); app('stopTracking');
     m.mode === 'close' ? fx.success() : fx.abort();
     $('dlgEnd').innerHTML = `<div style="padding:22px;text-align:center">
       <div style="color:var(--bad);font-size:16px;letter-spacing:.3em">${m.reason}</div>
@@ -136,7 +181,10 @@
     };
   }
   link.on('joined', m => {
-    me = m.id; mission = m.mission; clearTimeout(retryT);
+    me = m.id; mission = m.mission; clearTimeout(retryT); alertJoined = true;
+    try { pendingAlerts = JSON.parse(sessionStorage[alertKey()] || '[]'); } catch (e) { pendingAlerts = []; }
+    riderAlerts = mission.riderAlerts || []; renderRiderAlerts();
+    setTimeout(sendPending, 0);
     try { sessionStorage['ulRid:' + mission.code] = me; } catch (e) {}
     if (voice) { voice.selfId = me; voice.sync(roster.map(u => u.id)); }
     if (started && NATIVE_RADIO) startNativeRadio();
@@ -336,7 +384,7 @@
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, shut));
   btn.oncontextmenu = e => e.preventDefault();
   // laptops: hold Space · Bluetooth PTT remotes usually emit media/volume keys
-  addEventListener('keydown', e => { if (NATIVE_RADIO && e.key === 'MediaPlayPause') return; if (!started || e.repeat || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || document.querySelector('dialog[open]')) return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) { e.preventDefault(); open(); } });
+  addEventListener('keydown', e => { if (NATIVE_RADIO && e.key === 'MediaPlayPause') return; if (!started || e.repeat || ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || document.querySelector('dialog[open]')) return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) { e.preventDefault(); open(); } });
   addEventListener('keyup', e => { if (NATIVE_RADIO && e.key === 'MediaPlayPause') return; if ([' ', 'MediaPlayPause', 'AudioVolumeUp', 'Enter'].includes(e.key)) shut(); });
   if ('mediaSession' in navigator && !NATIVE_RADIO) {          // the app's media session handles the headset button itself
     try {

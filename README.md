@@ -1,5 +1,22 @@
 # ULTRALINK — cycling telemetry & comms  (v1.7)
 
+**New in v1.9 — rider assistance alerts**
+
+- Rider mode has one-tap **RIDER DOWN** (red) and **MECHANICAL** (amber) buttons beside the existing push-to-talk workflow. These are manual rider reports, not automatic crash detection.
+- RIDER DOWN loops the supplied missile-jettison effect beneath: “WARNING. RIDER DOWN. WARNING. RIDER DOWN. RIDER DOWN.”
+- MECHANICAL loops the supplied F/A-18 RWR effect beneath: “MECHANICAL. MECHANICAL. MECHANICAL.” The existing OFF COURSE audio remains unchanged.
+- Escort consoles automatically select and zoom to the reporting rider's actual GPS fix, without snapping an emergency position to the course. If no fix is available, the warning still appears and shows that GPS is unavailable; the map focuses when a fix arrives.
+- Each warning widget identifies the rider, shows continuously updated **straight-line distance from this escort to the rider**, GPS-fix age and a **MASTER ALERT** button. Distances are not driving directions or road distances.
+- The widget's MASTER ALERT silences/dismisses that incident after relay confirmation. **M**, the existing global master shortcut, acknowledges all current incident warnings and existing off-course warnings. Incident acknowledgement synchronizes across escorts and is reported back to the rider. It does not certify that the rider is safe or the problem repaired.
+- Simultaneous audio uses one channel: RIDER DOWN takes precedence over MECHANICAL, then OFF COURSE. Other widgets remain visible; after the higher-priority incident is acknowledged, the next warning sounds.
+- Pending rider reports are kept in session storage and retried on reconnect. The phone distinguishes “not sent / waiting for connection,” relay receipt, and escort acknowledgement. Duplicate taps/retries do not create duplicate active incidents.
+- Active incident warnings and acknowledgements are stored with mission state in `missions.json`, subject to the same storage persistence as existing missions. Alerts retain their last GPS fix if a rider disconnects and are supplied to escorts joining/rejoining the mission.
+- Alerts require a working connection to reach an escort. No cellular/internet connection means no instant delivery. GPS, browser audio permissions and the console's sound/volume settings still apply. This is not a replacement for an emergency-services call or a certified safety system.
+
+**Deploying this update:** replace the repository files from the archive, including `server.js`, the changed web files, both new alert MP3s and `sw.js`; commit to the branch used by your existing deployment. A server redeploy is required, not only a frontend refresh. Reload/reopen rider and escort screens after deployment. Existing app shells that load this hosted web UI do not need rebuilding for these web controls.
+
+**Alert tests:** with the local server running, `node test-v19.js` exercises alert delivery, audio selection, GPS focus, distance, acknowledgements, reconnects, missing GPS and mission isolation. Like the existing browser tests, it requires Playwright and Chromium. Screenshots default to `shots/`; override with `UL_SHOTS` if needed.
+
 **New in v1.8 — escort ops & pacing (web only, no APK rebuild needed)**
 - **Escort telemetry removed** — escorts now share their position only. Escort cards and the selected-unit panel show position / distance / who they follow; the map marker stays.
 - **Off-course voice alarm** — a rider leaving the route triggers a looping cockpit-style voice ("WARNING. OFF COURSE. OFF COURSE. WARNING.", `public/off-course-alert.mp3`). The F/A-18 RWR warning tone plays underneath the voice (the tone dips while the words are spoken, so they stay clear). It repeats until MASTER ALERT (or the M key) is pressed, and also stops when the rider is back on course.

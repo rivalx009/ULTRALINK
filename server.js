@@ -198,6 +198,13 @@ function broadcast(code, msg, exclude) {
   peers(code, exclude).forEach(c => c.send(msg));
 }
 
+function alertPosition(d) {
+  if (!d || !Number.isFinite(d.lat) || !Number.isFinite(d.lon) || Math.abs(d.lat) > 90 || Math.abs(d.lon) > 180) return null;
+  return { lat: d.lat, lon: d.lon, accuracy: Number.isFinite(d.accuracy) ? d.accuracy : null, ts: Number.isFinite(d.ts) ? d.ts : Date.now() };
+}
+function alertState(code) {
+  broadcast(code, { t: 'rider.alert.state', alerts: missions[code]?.riderAlerts || [] });
+}
 function handle(c, m) {
   switch (m.t) {
     case 'mission.create': {
@@ -285,12 +292,41 @@ function handle(c, m) {
       c.color = m.color || colorFor(mis, c.callsign);
       c.send({ t: 'joined', id: c.id, mission: mis, color: c.color });
       broadcastRoster(code);
+      c.send({ t: 'rider.alert.state', alerts: mis.riderAlerts || [] });
       break;
     }
     case 'telemetry': {
       if (!c.mission || c.role === 'unit' || c.audioOf) return;   // comms channels / radio sidecars carry no telemetry
       c.telemetry = m.data; c.telAt = Date.now();
+      const pos = alertPosition(m.data);
+      if (pos) (missions[c.mission]?.riderAlerts || []).filter(a => a.riderId === c.id && !a.ack).forEach(a => { a.data = pos; });
       broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data, fresh: m.fresh || undefined }, c);
+      break;
+    }
+    case 'rider.alert': {
+      const mis = missions[c.mission];
+      if (!mis || c.role !== 'rider' || c.audioOf || !['riderDown', 'mechanical'].includes(m.kind) || !/^[0-9a-f-]{36}$/i.test(m.eventId || '')) return;
+      const alerts = mis.riderAlerts || (mis.riderAlerts = []);
+      const existing = alerts.find(a => a.eventId === m.eventId);
+      if (existing) { if (existing.riderId === c.id) c.send({ t: 'rider.alert.state', alerts }); break; }
+      // A double tap or retry must not create another active incident of the same kind.
+      const active = alerts.find(a => a.riderId === c.id && a.kind === m.kind && !a.ack);
+      if (active) { c.send({ t: 'rider.alert.state', alerts }); break; }
+      alerts.push({ eventId: m.eventId, kind: m.kind, riderId: c.id, callsign: c.callsign,
+        color: c.color, since: Date.now(), ack: false, data: alertPosition(m.data) || alertPosition(c.telemetry) });
+      // Keep recent acknowledged history, never evict an active warning.
+      mis.riderAlerts = alerts.filter(a => !a.ack).concat(alerts.filter(a => a.ack).slice(-200));
+      persist(); alertState(c.mission); break;
+    }
+    case 'rider.alert.ack': {
+      const mis = missions[c.mission];
+      if (!mis || c.role !== 'escort' || c.audioOf || !Array.isArray(m.eventIds)) return;
+      let changed = false;
+      (mis.riderAlerts || []).forEach(a => {
+        if (!a.ack && m.eventIds.includes(a.eventId)) { a.ack = true; a.ackAt = Date.now(); a.ackBy = c.callsign; changed = true; }
+      });
+      if (changed) { persist(); alertState(c.mission); }
+      else c.send({ t: 'rider.alert.state', alerts: mis.riderAlerts || [] });
       break;
     }
     case 'signal': {           // WebRTC offer/answer/ice — targeted

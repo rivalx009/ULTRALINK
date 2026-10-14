@@ -185,7 +185,21 @@
   /* ---------- ops additions: off-route alert, return, PTT, sector card ---------- */
   #opsSecCard{top:12px;right:12px}
   #map.popopen #opsSecCard{right:324px}
-  #offAlert{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:640;min-width:320px;max-width:min(560px,calc(100% - 24px));display:none;border:2px solid var(--bad);background:rgba(40,4,10,.95);box-shadow:0 0 30px rgba(255,40,70,.45);animation:offp 1.2s ease-in-out infinite}
+  #alertStack{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:640;width:min(560px,calc(100% - 24px));max-height:55%;overflow:auto;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+  #alertStack>*{pointer-events:auto}
+  #map.incident-active #hud{visibility:hidden}
+  @media(max-width:760px){body.incident-active #toasts{top:calc(44px + 55dvh + 12px + env(safe-area-inset-top));bottom:auto!important}}
+  #incidentAlerts:empty{display:none}
+  #incidentAlerts{display:grid;gap:8px}
+  .incident{border:2px solid #ff4d6d;background:rgba(48,5,14,.97);color:#fff;padding:12px;font:14px/1.45 var(--mono)}
+  .incident.mechanical{border-color:#ffb000;background:rgba(44,29,6,.97)}
+  .incident-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700;letter-spacing:.06em}
+  .incident-head button{margin-left:auto;min-height:44px;background:#fff;color:#a6112b;border:0;font-size:12px;font-weight:700;padding:8px 12px}
+  .incident-body{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .incident-body button{min-height:44px;font-size:12px;padding:8px;background:transparent;color:#fff;border:1px solid #ff718b}
+  .incident-meta{font-size:12px;color:#ffd7de;margin-top:6px;overflow-wrap:anywhere}
+  .incident-head button:focus-visible,.incident-body button:focus-visible{outline:3px solid #00e5ff;outline-offset:2px}
+  #offAlert{position:relative;width:100%;box-sizing:border-box;display:none;border:2px solid var(--bad);background:rgba(40,4,10,.95);box-shadow:0 0 30px rgba(255,40,70,.45);animation:offp 1.2s ease-in-out infinite}
   #offAlert.show{display:block}
   #offAlert.ack{animation:none;box-shadow:0 0 10px rgba(255,40,70,.25);border-color:#a3263a}
   @keyframes offp{0%,100%{box-shadow:0 0 14px rgba(255,40,70,.35)}50%{box-shadow:0 0 38px rgba(255,40,70,.8)}}
@@ -438,7 +452,7 @@
           <div class="row" style="margin-bottom:6px"><b style="font-size:10px;color:var(--accent)">COMMS LOG</b><span class="sp"></span><span id="netq" class="tag">NET</span></div>
           <div id="log"></div>
         </div>
-        <div id="offAlert"><div class="oh"><span>⚠ RIDER OFF ROUTE</span><span class="sp"></span><button id="btnMaster" title="Silence and acknowledge (M)">MASTER ALERT</button></div><div class="ob" id="offRows"></div></div>
+        <div id="alertStack"><div id="incidentAlerts" aria-live="polite"></div><div id="offAlert"><div class="oh"><span>⚠ RIDER OFF ROUTE</span><span class="sp"></span><button id="btnMaster" title="Silence and acknowledge (M)">MASTER ALERT</button></div><div class="ob" id="offRows"></div></div></div>
         <div class="seccard" id="opsSecCard"></div>
         <button id="btnReturn" title="Centre the map on the lead / selected rider (R)">◎ RETURN TO RIDER</button>
         <div id="pttDock"><button class="gpsbtn" id="btnGps" title="Refresh the live GPS feed and positions of every rider and escort (G)"><span class="gi">↻</span> GPS</button><button id="pttTgt" class="ghost" title="Who the on-screen PTT talks to">TO: ALL</button><button id="pttBtn" title="Hold to talk">PTT</button></div>

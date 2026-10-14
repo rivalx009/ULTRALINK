@@ -13,6 +13,7 @@
   let leadName = null, launchLead = null, restoring = 0, opsSec = null, hiLayer = null, pttTo = 'all';
   let power = null, geoWatch = null, gpsRef = null, freshRid = null, mTab = 'map';
   const isPhone = () => innerWidth <= 760;
+  const INCIDENTS = new Map(), seenIncidents = new Set(), pendingAcks = new Set();
   const OFF = new Map();               // rider id -> off-route alert state {n, back, on, ack, dist, since, beep}
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
@@ -121,7 +122,7 @@
       ids.add(u.id);
       const cur = units.get(u.id) || { data: {}, ts: 0 };
       const isNew = !units.has(u.id);
-      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color }));
+      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color, incidentOnly: false }));
       if (isNew && opsStarted) {
         log('SYS', `${u.callsign} (${u.role.toUpperCase()}) CONNECTED`, u.color); UL.toast(`${u.callsign} CONNECTED`, 'ok'); fx.success();
         if (u.role === 'rider' && u.callsign === leadName && sel === 'self') { sel = u.id; follow = true; G.zoomed = true; }   // lead rider becomes the main follow-up
@@ -133,11 +134,12 @@
   });
   link.on('telemetry', m => {
     const u = units.get(m.id) || { id: m.id, role: m.role, callsign: m.callsign, color: m.color };
-    u.data = m.data; u.ts = Date.now(); u.callsign = m.callsign; u.color = m.color; u.role = m.role;
+    u.data = m.data; u.ts = Date.now(); u.callsign = m.callsign; u.color = m.color; u.role = m.role; u.incidentOnly = false;
     units.set(m.id, u);
     if (u.role === 'rider' && sectorTimer) sectorTimer.feed(u.callsign, m.data.covered, m.data.ts || Date.now());
     if (u.role === 'rider' && power) power.feed(u);
     if (m.fresh && gpsRef && m.fresh === gpsRef.rid) gpsRef.got.add(m.id);
+    INCIDENTS.forEach(a => { if (a.riderId === u.id && validIncidentPos(m.data)) { a.data = m.data; if (focusedIncident === a.eventId && focusWaiting) focusIncident(a); } });
     placeUnit(u); checkOff(u); renderUnits(); if (sel === m.id) renderSel();
   });
   let rxCount = 0;
@@ -156,6 +158,22 @@
     }
   });
   link.on('text', m => log(m.callsign, m.body, '#ffb000'));
+  link.on('rider.alert.state', m => {
+    if (ended) return;
+    INCIDENTS.clear();
+    (m.alerts || []).forEach(a => {
+      if (a.ack) { pendingAcks.delete(a.eventId); return; }
+      INCIDENTS.set(a.eventId, a);
+      if (!seenIncidents.has(a.eventId)) {
+        seenIncidents.add(a.eventId);
+        log('ALERT', a.callsign + ' · ' + incidentLabel(a.kind) + ' · RIDER-REPORTED', a.kind === 'riderDown' ? '#ff4d6d' : '#ffb000');
+      }
+    });
+    const next = [...INCIDENTS.values()].sort((a,b) => (a.kind === 'riderDown' ? 0 : 1) - (b.kind === 'riderDown' ? 0 : 1) || b.since-a.since)[0];
+    if (next && next.eventId !== focusedIncident) { focusedIncident = next.eventId; focusIncident(next); }
+    if (!next) focusedIncident = null;
+    renderOff();
+  });
 
   /** select a unit: map flies to it and follows, graph homes in on it, rider pop-up opens */
   let flyUntil = 0;
@@ -245,7 +263,8 @@
   }
   function placeUnit(u) {
     const d = u.data; if (!d || d.lat == null || !map) return;
-    const ll = shownLL(d);
+    // Assistance incidents always show the raw GPS fix, never a route-snapped substitute.
+    const ll = [...INCIDENTS.values()].some(a => a.riderId === u.id) ? [d.lat, d.lon] : shownLL(d);
     if (!u.marker) {
       u.marker = L.marker(ll, { icon: icon(u), zIndexOffset: 500 }).addTo(map);
       u.marker.on('click', () => selectUnit(u.id));
@@ -305,7 +324,7 @@
   });
   link.on('mission', m => { mission = m.mission; startAt = mission.startAt || null; lastCdSec = null; });
   link.on('mission.ended', m => {
-    ended = true; OFF.clear(); renderOff(); m.mode === 'close' ? fx.success() : fx.abort();
+    ended = true; INCIDENTS.clear(); pendingAcks.clear(); OFF.clear(); renderOff(); m.mode === 'close' ? fx.success() : fx.abort();
     $('dlgEnded').innerHTML = `<div style="padding:22px;text-align:center">
       <h3 style="color:var(--bad);letter-spacing:.3em">${esc(m.reason)}</h3>
       <div class="muted" style="font-size:11px;margin-top:10px">Declared by ${esc(m.by)}. All units have been notified and the mission code is now invalid.</div>
@@ -937,7 +956,7 @@
     }
     if (tab === 'keys') {
       h += `<div class="hint" style="margin-bottom:8px">Click a key, then press the key you want. Unit slots are assigned in roster order: riders first, then escorts.</div>`;
-      [['pttAll', 'PTT — all units'], ['follow', 'Toggle follow'], ['returnLead', 'Return to lead rider'], ['refreshGps', 'Refresh live GPS (all units)'], ['master', 'Master alert (acknowledge off-route)'], ['clock', 'Mission clock start/stop'], ['layer', 'Cycle map layer'], ['settings', 'Open settings']].forEach(([k, lbl]) => h += row(lbl, `<div class="keycap" data-k="${k}">${UL.KEY_LABEL(v.keys[k])}</div>`));
+      [['pttAll', 'PTT — all units'], ['follow', 'Toggle follow'], ['returnLead', 'Return to lead rider'], ['refreshGps', 'Refresh live GPS (all units)'], ['master', 'Master alert (acknowledge all warnings)'], ['clock', 'Mission clock start/stop'], ['layer', 'Cycle map layer'], ['settings', 'Open settings']].forEach(([k, lbl]) => h += row(lbl, `<div class="keycap" data-k="${k}">${UL.KEY_LABEL(v.keys[k])}</div>`));
       h += `<div class="sub" style="margin:14px 0 6px">PTT UNIT SLOTS</div>`;
       v.keys.units.forEach((code, i) => { const u = sortedUnits()[i]; h += row('Slot ' + (i + 1) + (u ? ' <span style="color:' + u.color + '">· ' + esc(u.callsign) + '</span>' : ' <span class="muted">· unassigned</span>'), `<div class="keycap" data-ku="${i}">${UL.KEY_LABEL(code)}</div>`); });
     }
@@ -1053,7 +1072,10 @@
   function renderOff() {
     const list = [...OFF.entries()].filter(([id, s]) => s.on && !s.ack && units.has(id));
     /* voice alarm loops while any rider is off course and not acknowledged (MASTER ALERT / M stops it) */
-    if (list.length && !ended && !fx.alarmOn) fx.alarmStart(); else if ((!list.length || ended) && fx.alarmOn) fx.alarmStop();
+    const incidents = [...INCIDENTS.values()];
+    const kind = ended ? null : incidents.some(a => a.kind === 'riderDown') ? 'riderDown' : incidents.length ? 'mechanical' : list.length ? 'offCourse' : null;
+    if (kind) fx.alarmStart(kind); else if (fx.alarmOn) fx.alarmStop();
+    renderIncidents();
     const box = $('offAlert'); if (!box) return;
     box.classList.toggle('show', list.length > 0);
     const h = list.map(([id, s]) => { const u = units.get(id), mm = Math.floor((Date.now() - s.since) / 1000);
@@ -1062,8 +1084,57 @@
   }
   function masterAck() {
     let n = 0; OFF.forEach(s => { if (s.on && !s.ack) { s.ack = true; n++; } });
+    if (INCIDENTS.size) acknowledgeIncidents([...INCIDENTS.keys()]);
     if (n) { log('SYS', 'MASTER ALERT ACKNOWLEDGED', '#ffb000'); fx.tick(); }
     renderOff();
+  }
+
+  /* ============================================ RIDER-REPORTED INCIDENTS */
+  const incidentLabel = k => k === 'riderDown' ? 'RIDER DOWN' : 'MECHANICAL';
+  const validIncidentPos = d => d && Number.isFinite(d.lat) && Number.isFinite(d.lon) && Math.abs(d.lat) <= 90 && Math.abs(d.lon) <= 180;
+  let focusedIncident = null, focusWaiting = false;
+  function focusIncident(a) {
+    const u = units.get(a.riderId), d = validIncidentPos(u?.data) ? u.data : a.data;
+    focusWaiting = !validIncidentPos(d);
+    if (!map || focusWaiting) { UL.toast(a.callsign + ' · ALERT RECEIVED — WAITING FOR RIDER GPS', 'warn'); return; }
+    if (!u) units.set(a.riderId, { id: a.riderId, role: 'rider', callsign: a.callsign, color: a.color || '#ff4d6d', data: d, ts: d.ts || a.since, incidentOnly: true });
+    else if (!validIncidentPos(u.data)) u.data = d;
+    const unit = units.get(a.riderId); placeUnit(unit);
+    if (isPhone() && mTab !== 'map') setTab('map');
+    returnTo(a.riderId);
+    map.flyTo([d.lat, d.lon], Math.max(map.getZoom(), cfg.v.zoomFollow, 16), { duration: .45 });
+  }
+  function acknowledgeIncidents(ids) {
+    if (!link.ready) { UL.toast('NOT ACKNOWLEDGED — ESCORT LINK OFFLINE', 'bad'); return; }
+    ids.forEach(id => pendingAcks.add(id));
+    link.send({ t: 'rider.alert.ack', eventIds: ids }); renderIncidents();
+    // Never claim acknowledgement or silence before the relay confirms it.
+    setTimeout(() => { ids.forEach(id => pendingAcks.delete(id)); renderIncidents(); }, 3000);
+  }
+  let incidentSig = '';
+  function renderIncidents() {
+    const box = $('incidentAlerts'); if (!box) return;
+    const active = INCIDENTS.size > 0;
+    $('map')?.classList.toggle('incident-active', active); document.body.classList.toggle('incident-active', active);
+    const self = tel.state;
+    const rows = [...INCIDENTS.values()].sort((a,b) => (a.kind === 'riderDown' ? 0 : 1)-(b.kind === 'riderDown' ? 0 : 1));
+    const sig = rows.map(a => a.eventId + ':' + pendingAcks.has(a.eventId)).join('|');
+    const view = [];
+    const html = rows.map(a => {
+      const u = units.get(a.riderId), d = validIncidentPos(u?.data) ? u.data : a.data;
+      const distance = validIncidentPos(self) && validIncidentPos(d) ? UL.haversine(self, d) : null;
+      const dst = distance == null ? 'DISTANCE UNAVAILABLE — WAITING FOR GPS' : (distance < 1000 ? Math.round(distance) + ' M' : (distance / 1000).toFixed(2) + ' KM') + ' TO RIDER · STRAIGHT-LINE';
+      const gps = validIncidentPos(d) ? 'GPS FIX ' + Math.max(0, Math.floor((Date.now() - (d.ts || a.since))/1000)) + 'S AGO' + (!u || u.incidentOnly ? ' · RIDER LINK LOST' : '') : 'RIDER POSITION UNAVAILABLE';
+      view.push({ eventId: a.eventId, dst, meta: 'RIDER-REPORTED · ' + gps + ' · ' + UL.hmsStr((Date.now()-a.since)/1000) });
+      return `<section class="incident ${a.kind}" data-event="${esc(a.eventId)}"><div class="incident-head"><span>⚠ ${incidentLabel(a.kind)}</span><button data-ack="${esc(a.eventId)}" ${pendingAcks.has(a.eventId) ? 'disabled' : ''} title="Silence and acknowledge this warning">${pendingAcks.has(a.eventId) ? 'ACKNOWLEDGING…' : 'MASTER ALERT'}</button></div><div class="incident-body"><b>${esc(a.callsign)}</b><span class="incident-distance">${dst}</span><button data-focus="${esc(a.eventId)}">LOCATE RIDER</button></div><div class="incident-meta">RIDER-REPORTED · ${gps} · ${UL.hmsStr((Date.now()-a.since)/1000)}</div></section>`;
+    }).join('');
+    // Keep controls stable while the live distance/timer updates (including keyboard focus).
+    if (sig !== incidentSig) { box.innerHTML = html; incidentSig = sig; }
+    view.forEach(v => { const card = box.querySelector('[data-event="' + v.eventId + '"]');
+      if (card) { card.querySelector('.incident-distance').textContent = v.dst; card.querySelector('.incident-meta').textContent = v.meta; } });
+    box.querySelectorAll('[data-ack]').forEach(b => b.onclick = e => { e.stopPropagation(); acknowledgeIncidents([b.dataset.ack]); });
+    box.querySelectorAll('[data-focus]').forEach(b => b.onclick = () => focusIncident(INCIDENTS.get(b.dataset.focus)));
+    if (globalThis.L) { L.DomEvent.disableClickPropagation(box); L.DomEvent.disableScrollPropagation(box); }
   }
 
   /* ============================================ LEAD RIDER + RETURN TO RIDER */
@@ -1239,5 +1310,5 @@
   startup();
   window.__ul = { get units() { return units; }, get sectors() { return sectors; }, wind, G, get sel() { return sel; }, selectUnit,
     get voice() { return voice; }, get follow() { return follow; }, get lead() { return leadName; }, setLead, returnTo, openSector: openOpsSector, closeSector: closeOpsSector,
-    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, masterAck, get me() { return me; }, refreshGps, get power() { return power; }, setTab };
+    get opsSec() { return opsSec; }, get route() { return route; }, alerts: OFF, incidents: INCIDENTS, masterAck, get me() { return me; }, refreshGps, get power() { return power; }, setTab };
 })();

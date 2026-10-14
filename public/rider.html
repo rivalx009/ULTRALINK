@@ -13,6 +13,15 @@
   .cells .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:3px}
   #ptt{margin:auto 14px 14px;height:130px;border-radius:6px;border:2px solid var(--line2);background:radial-gradient(circle at 50% 35%,#0d2c36,#06151a);
        font-size:17px;letter-spacing:.3em;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;touch-action:none;user-select:none}
+  #riderEmergency{margin:0 14px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #riderEmergency button{min-height:64px;padding:12px 6px;border-radius:6px;font-size:15px;font-weight:700;letter-spacing:.08em;touch-action:manipulation;color:#fff}
+  #btnRiderDown{background:#ae1731;border:2px solid #ff607d}
+  #btnMechanical{background:#613c0d;border:2px solid #ffb000}
+  #riderEmergency button[aria-pressed="true"]{outline:2px solid #fff;outline-offset:2px}
+  #riderAlertStatus{grid-column:1/-1;font-size:12px;line-height:1.5;color:#ffd7de;overflow-wrap:anywhere}
+  #riderAlertStatus:empty{display:none}
+  #riderEmergency button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+  #ptt{flex-shrink:0}
   #ptt.live{border-color:var(--bad);background:radial-gradient(circle at 50% 35%,#4a1220,#1a0509);color:#ffd7de;box-shadow:0 0 40px rgba(255,77,109,.45)}
   #prof{width:100%;height:78px;display:block}
   .chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px}
@@ -29,7 +38,11 @@
   .rwh .wmin-btn{margin-left:auto}
   .rw.wmin .rwh{border-bottom:1px solid var(--line)}
   #login{overflow:auto;justify-content:flex-start;padding-top:max(6vh,env(safe-area-inset-top))}
-  @media (max-height:640px){#ptt{height:104px}}
+  @media (max-height:720px){
+    .hero{padding:8px 16px 6px}.hero .big{font-size:50px}
+    .cells>div{padding:7px 8px}#prof{height:40px}.chips{padding:6px 14px}
+    #ptt{height:104px}#riderEmergency{margin-bottom:8px}
+  }
   .hero .big{font-size:clamp(48px,16vw,72px)}
   .cells .v{font-size:clamp(18px,5.5vw,24px)}
   #rSet{padding:8px 12px!important;font-size:13px!important}
@@ -92,6 +105,11 @@
   <dialog id="dlgEnd" style="background:var(--bg2);color:var(--fg);border:1px solid var(--bad);width:92vw;max-width:420px"></dialog>
   <div style="flex:1"></div>
   <button id="tapAudio">🔊 TAP TO ENABLE RADIO AUDIO</button>
+  <div id="riderEmergency" aria-label="Rider assistance alerts">
+    <button id="btnRiderDown" type="button" aria-pressed="false">RIDER DOWN</button>
+    <button id="btnMechanical" type="button" aria-pressed="false">MECHANICAL</button>
+    <div id="riderAlertStatus" role="status" aria-live="polite"></div>
+  </div>
   <button id="ptt">PUSH TO TALK<span class="muted" style="font-size:9px;letter-spacing:.2em">HOLD<span class="keyhint"> · OR HOLD SPACE</span> · OR BT REMOTE BUTTON</span></button>
 </div>
 
