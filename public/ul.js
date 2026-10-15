@@ -587,7 +587,7 @@ class HardwarePTT {
     addEventListener('blur',()=>this.release('WINDOW LOST FOCUS — PTT RELEASED'));
     document.addEventListener('focusin',e=>{if(this.active&&this.blockedTarget(e))this.release('INPUT OR DIALOG FOCUSED — PTT RELEASED');});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)this.release('PAGE HIDDEN — PTT RELEASED');});
-    navigator.mediaDevices?.addEventListener('devicechange',()=>this.devicesChanged());
+    navigator.mediaDevices?.addEventListener('devicechange',()=>{clearTimeout(this.deviceTimer);this.deviceTimer=setTimeout(()=>this.devicesChanged(),1200);});
   }
   async reset(){this.release('HARDWARE SETTINGS RESET');this.config={key:'',mode:'hold',limit:60};this.save();this.drawBinding();if(this.opts.getVoice())await this.chooseInput('');else{try{localStorage.ulAudioInput='';}catch(e){}}}
   save(){try{localStorage.ulHardwarePTT=JSON.stringify(this.config);}catch(e){}}
@@ -629,12 +629,12 @@ class HardwarePTT {
   async listDevices(permission=false){
     if(!navigator.mediaDevices?.enumerateDevices){this.show('AUDIO DEVICE LIST UNAVAILABLE — USE HTTPS AND A SUPPORTED BROWSER.');return;}
     try{
-      if(permission){const stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop());}
+      if(permission){const voice=this.opts.getVoice();if(voice)await voice.mic();else{const id=localStorage.ulAudioInput||'';const stream=await navigator.mediaDevices.getUserMedia({audio:id?{deviceId:{exact:id}}:true});stream.getTracks().forEach(t=>t.stop());}}
       const all=await navigator.mediaDevices.enumerateDevices();this.devices=all.filter(d=>d.kind==='audioinput');
       const select=this.el('input');if(!select)return;select.replaceChildren();select.append(new Option('Default — system microphone',''));
       this.devices.filter(d=>d.deviceId&&d.deviceId!=='default').forEach((d,i)=>select.append(new Option(d.label||'Microphone '+(i+1)+' — allow access to show its name',d.deviceId)));
       const id=this.opts.getVoice()?.inputDeviceId||localStorage.ulAudioInput||'';
-      if(id&&!this.devices.some(d=>d.deviceId===id))select.append(new Option('Saved microphone — currently unavailable',id));select.value=id;
+      if(id&&!this.devices.some(d=>d.deviceId===id)){const live=this.opts.getVoice()?.track?.readyState==='live';select.append(new Option(live?'Connected microphone — inventory updating':'Saved microphone — currently unavailable',id));}select.value=id;
       if(permission)this.show('DEVICE LIST REFRESHED. SELECT A MICROPHONE TO CONNECT IT.');
     }catch(e){this.show('DEVICE ACCESS FAILED: '+(e.message||e.name));}
   }
@@ -649,10 +649,28 @@ class HardwarePTT {
     }catch(e){if(selection!==this.selectionSeq)return;if(this.el('input'))this.el('input').value=old;this.show('MIC CHANGE FAILED: '+(e.message||e.name)+'. PREVIOUS INPUT KEPT; NO SILENT FALLBACK.');}
   }
   async devicesChanged(){
-    const id=this.opts.getVoice()?.inputDeviceId||localStorage.ulAudioInput||'';
-    try{const devices=await navigator.mediaDevices.enumerateDevices();if(id&&!devices.some(d=>d.kind==='audioinput'&&d.deviceId===id)){this.release('SELECTED MICROPHONE DISCONNECTED — PTT RELEASED');this.opts.getVoice()?.invalidateMicrophone('SELECTED MICROPHONE DISCONNECTED');this.show('SELECTED MICROPHONE UNAVAILABLE. RECONNECT IT OR EXPLICITLY CHOOSE ANOTHER INPUT.');}
-      else if(id&&this.opts.getVoice()&&!this.opts.getVoice().track)await this.opts.getVoice().recover();
-      await this.listDevices(false);}catch(e){}
+    const sequence=this.deviceSequence=(this.deviceSequence||0)+1;
+    const voice=this.opts.getVoice(),id=voice?.inputDeviceId||localStorage.ulAudioInput||'';
+    try{
+      let devices=await navigator.mediaDevices.enumerateDevices();
+      const present=()=>devices.some(d=>d.kind==='audioinput'&&d.deviceId===id);
+      if(id&&!present()){
+        // Enumeration may be incomplete during permission/profile transitions.
+        // A live track is stronger evidence than a missing inventory entry.
+        if(voice?.track?.readyState==='live'){await this.listDevices(false);return;}
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        if(sequence!==this.deviceSequence)return;
+        devices=await navigator.mediaDevices.enumerateDevices();
+        if(voice!==this.opts.getVoice()||id!==(voice?.inputDeviceId||localStorage.ulAudioInput||''))return;
+        if(!present()&&voice?.track?.readyState!=='live'){
+          this.release('SELECTED MICROPHONE UNAVAILABLE — PTT RELEASED');
+          voice?.invalidateMicrophone('SELECTED MICROPHONE UNAVAILABLE');
+          this.show('SELECTED MICROPHONE UNAVAILABLE. RECONNECT IT OR EXPLICITLY CHOOSE ANOTHER INPUT.');
+        }
+      }
+      if(id&&present()&&voice&&voice.track?.readyState!=='live')await voice.recover();
+      await this.listDevices(false);
+    }catch(e){this.show('DEVICE LIST CHECK FAILED: '+(e.message||e.name)+'. EXISTING INPUT KEPT.');}
   }
   async startMeter(){
     this.release('LOCAL MICROPHONE TEST — NO RADIO TRANSMISSION');this.stopMeter();

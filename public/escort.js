@@ -23,7 +23,7 @@
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
   /* ================================================================== BOOT */
-  const bootTasks = UL.boot.tasks();
+  const bootTasks = UL.boot.tasks({ probeMicrophone: false });
   async function startup() {
     buildSettings();
     if (/noboot/.test(location.search) || UL.boot.seen()) { const b = $('boot'); if (b) b.remove(); UL.Plan.show(); return; }   // loading screen already shown on the start page

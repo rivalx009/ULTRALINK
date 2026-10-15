@@ -103,7 +103,7 @@
       } catch (e) { st.gpsErr = 'off'; end({ warn: true, text: 'LOCATION DISABLED' }); }
     });
   }
-  function tasks() { return [
+  function tasks(opts = {}) { return [
     { id: 'core', label: 'TACTICAL CORE', subtitle: 'Initialising tactical core', min: 300,
       run: async () => { try { localStorage.ulBoot = Date.now(); } catch (e) {} return { ok: true, text: 'ONLINE' }; } },
     { id: 'gps', label: 'SATELLITE LINK', subtitle: 'Connecting to satellites', min: 400,
@@ -120,6 +120,7 @@
       run: async () => {
         try { global.UL.fx && global.UL.fx.unlock(); } catch (e) {}
         if (!navigator.mediaDevices) return { warn: true, text: 'NO AUDIO API' };
+        if (opts.probeMicrophone === false) return { ok: true, text: 'MIC CHECK DEFERRED · NO DEVICE OPENED' };
         const p = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => { s.getTracks().forEach(t => t.stop()); return { ok: true, text: 'MIC READY · PTT ARMED' }; }).catch(() => ({ warn: true, text: 'MIC DENIED — PTT TX OFF' }));
         return Promise.race([p, new Promise(r => setTimeout(() => r({ warn: true, text: 'MIC PERMISSION PENDING' }), 5000))]);
       } },

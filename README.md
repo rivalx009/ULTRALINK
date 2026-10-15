@@ -1,3 +1,11 @@
+## v1.11.2 — non-invasive Escort startup
+
+Escort boot no longer opens/closes a temporary default microphone. Microphone capture still starts when a mission is entered, or when explicitly requested through Audio settings. Bluetooth pairing remains managed by the operating system; this application does not pair or unpair devices.
+
+Audio refresh reuses an existing mission microphone rather than opening a second default input. Device-change reports are debounced; a live microphone track is not stopped because its ID is temporarily missing from enumeration. Missing non-live inputs are confirmed on a second inventory read. Exact input selection and no-silent-fallback behavior remain unchanged. Physical PTT bindings remain saved.
+
+The physical Bluetooth disconnect reported by the user cannot be reproduced without the actual laptop/accessory. These changes address identified startup and inventory risks, not a verified OS/driver diagnosis. Hardware validation is still required. Deployment file paths remain identical to v1.10.
+
 # ULTRALINK — cycling telemetry & comms  (v1.7)
 
 This release preserves the exact v1.10 file paths. Hardware PTT code and styles are integrated into the existing `public/ul.js` and `public/ul.css`; no additional runtime files or dependencies are required.
