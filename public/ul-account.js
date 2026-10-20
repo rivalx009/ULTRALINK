@@ -43,12 +43,16 @@ A.mount=()=>{if($('#accountBar'))return;
   function make(id){const bar=document.createElement('div');bar.id=id;bar.className='account-strip';bar.innerHTML='<button type="button" data-account-open></button><span data-account-sync></span>';bar.querySelector('button').textContent=A.user.callsign+' · ACCOUNT';bar.querySelector('button').onclick=A.open;return bar;}
   const bar=make('accountBar');
   if($('#profPanel')){$('#profPanel').append(bar);const ops=make('accountOpsBar');$('#top').insertAdjacentElement('afterend',ops);}
-  else document.body.prepend(bar);
+  else {document.body.prepend(bar);
+    // The rider console occupies the viewport left BELOW its account strip.
+    if($('#app')){const size=()=>document.documentElement.style.setProperty('--ul-account-strip-height',bar.getBoundingClientRect().height+'px');size();new ResizeObserver(size).observe(bar);}
+  }
   status(A.error?'NOT SYNCED · OPEN ACCOUNT':'ACCOUNT SYNCED',!!A.error);
 };
 A.launch=async(mode,scripts)=>{const user=await A.ready;if(!user)return location.replace('/?mode='+mode);if(mode==='rider'&&(!user.riderName||!user.weightKg))return location.replace('/?mode=rider');
   localStorage.ulCallsign=user.callsign;localStorage.ulEscortCall=user.callsign;
   A.mount();for(const src of scripts){await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(Error('Cannot load '+src));document.body.append(script);});}
+  const login=$('#login');if(login){login.removeAttribute('inert');login.removeAttribute('aria-busy');}
   if(localStorage[A.dirtyKey()]==='1')A.flush();
 };
 A.choose=async mode=>{

@@ -1,0 +1,120 @@
+ULTRALINK v1.12.1 — RENDER FREE + NEON FREE, STEP BY STEP
+
+WHAT THIS CHANGES
+Accounts, rider name/weight, saved race/training profiles, versions and sign-in
+sessions now live in PostgreSQL, not accounts.json on the Render filesystem.
+Render serves ULTRALINK; Neon holds its account data. You do not install a database
+on the laptop, change Render to a paid plan, or add a Render persistent disk.
+
+BEFORE STARTING
+Export/backup existing profiles on the ORIGINAL laptop. Do not clear its browser
+storage. If you already created v1.12.0 accounts, read MIGRATION-v1.12.1.txt now.
+The new database starts empty; old accounts are not automatically transferred.
+Keep one Render server instance. This is not multi-server live-mission failover.
+
+STEP 1 — CREATE NEON DATABASE
+1. Visit https://neon.com and sign up/sign in in your own browser.
+2. Create a project on the FREE plan. A neutral project name is ULTRALINK.
+3. Choose a region close to your Render web service where available. Keep the
+   ordinary default branch/database/role unless you already have specific ones.
+4. Do not upgrade the plan or add paid resources for this setup.
+
+STEP 2 — COPY THE CONNECTION STRING PRIVATELY
+1. In your Neon project click CONNECT.
+2. Select the default branch, database and role. Keep CONNECTION POOLING enabled.
+3. Copy the PostgreSQL connection string (Node.js / pg, if a driver is requested).
+   It begins postgresql:// and the pooled hostname normally contains -pooler.
+4. Keep the whole URI including the sslmode / channel_binding query parameters.
+5. This contains a DATABASE PASSWORD. Do not paste it into chat, GitHub, public/
+   files, repository settings files or screenshots. Do not use the psql command
+   prefix or surrounding quote characters as part of the Render value.
+
+STEP 3 — SAVE THE SECRET IN THE EXISTING RENDER WEB SERVICE
+1. Open https://dashboard.render.com and select your EXISTING ULTRALINK service.
+2. Click ENVIRONMENT in the left pane.
+3. Click + ADD ENVIRONMENT VARIABLE.
+4. Key: DATABASE_URL
+   Value: paste the complete private Neon connection URI from Step 2.
+5. Choose SAVE ONLY for now, so the new variable is applied with the code deploy
+   in Step 4. Keep the service's Free plan unchanged.
+6. UL_DATA_DIR is no longer used for accounts. If it was only a placeholder from
+   the old disk instructions, remove it. Do not delete a real old disk/data copy
+   until you have backed it up or migrated accounts successfully.
+
+STEP 4 — UPDATE THE GITHUB REPOSITORY
+1. Download and EXTRACT the ULTRALINK v1.12.1 Neon update ZIP.
+2. It is an UPDATE, not a standalone app. Use your existing v1.11.2 or v1.12.0
+   repository. Back up the repository first.
+3. Copy/upload the archive's CONTENTS to the repository root (the folder that
+   already has server.js and Dockerfile). Replace files with the same names.
+4. public/... must stay inside public/. Keep other existing app/audio/map files.
+5. Include package-lock.json, package.json, postgres-store.js, accounts.js,
+   migrate-accounts.js, server.js, Dockerfile and the changed public files.
+6. Do not upload the ZIP itself or a folder wrapping the whole project. Never
+   upload node_modules, accounts.json, .env, a database dump or DATABASE_URL.
+7. Commit to the branch that your Render service deploys from.
+
+STEP 5 — DEPLOY AND CONFIRM DATABASE INITIALIZATION
+1. Let Render's auto-deploy run; if disabled, choose MANUAL DEPLOY > DEPLOY LATEST
+   COMMIT. Use the same existing web service and HTTPS address.
+2. The Docker build runs npm ci to install the pinned pg driver automatically.
+   There is no large framework build and no node_modules upload required.
+   If your existing service uses the Node runtime instead of Docker, set its
+   Build Command to npm ci --omit=dev --ignore-scripts, Start Command to npm start,
+   and select Node 22 or newer. An empty old build command will not install pg.
+3. Open Render LOGS. Look for this exact startup line:
+   POSTGRES ACCOUNT STORAGE READY (accounts + profiles + sessions)
+4. Tables are created automatically. You do NOT need to write/paste SQL in Neon.
+5. /health is process liveness, not a database availability guarantee. The READY
+   line plus an actual successful profile save are the useful checks.
+
+STEP 6 — VERIFY IT ON TWO DEVICES
+1. Open the SAME hosted HTTPS ULTRALINK URL on the original laptop. Reload once
+   after deployment. All riders and escorts must use this hosted server address.
+2. Choose Escort. Sign up a test callsign/password, or sign in to an account that
+   was migrated. Keep the password safe: no password recovery UI is included.
+3. Create/save a small test profile. Wait until the account strip says ACCOUNT
+   SYNCED. An offline/local-only save is NOT proof that Neon has received it.
+4. On a second device open the same URL, choose Escort and SIGN IN with that same
+   callsign/password. Check the full saved profile, route, sectors and notes.
+5. Restart/redeploy the Render service. Sign in/check again: the Neon account
+   and saved profile should still be there. Test this before relying on the app.
+6. Rider Mode still asks for rider name and weight when first required.
+
+STEP 7 — BRING OVER EXISTING RACE PROFILES
+For pre-account device profiles: on the original browser choose IMPORT PROFILES
+FROM THIS DEVICE, confirm ownership and wait for ACCOUNT SYNCED.
+For exported v1.12.0 account profiles: use planning IMPORT to select the JSON
+backup, then save/sync. A JSON account export can contain the whole collection.
+Verify from the second device before deleting any backup. If existing callsign/
+password accounts must be retained, use the optional private migration first.
+
+IF SOMETHING FAILS
+- DATABASE_URL missing: set that exact key in the Render SERVICE Environment,
+  save and deploy. A GitHub variable is not automatically a Render variable.
+- POSTGRES...ERROR: check the secret privately for a complete URI, correct role/
+  password, database/branch and sslmode query. Do not post the connection string.
+- DATABASE READY but signup/signin fails: read the visible error. Existing callsign
+  collisions are different from unavailable storage. Do not wipe the database.
+- PROFILE CONFLICT: another device saved first. Export your local copy, then use
+  the account dialog to reload the server copy. Offline edits are not auto-merged.
+- DB outage/unconfirmed write: preserve/export local changes. Reconnect and read
+  the account copy before retrying; a lost HTTP reply can leave commit uncertain.
+- First load/sign-in can be slower when a free service/database is waking.
+
+LIMITS / BACKUPS
+Neon Free has quotas and idle compute suspension; Render Free can sleep/restart.
+This keeps saved account data off Render's ephemeral filesystem but does not
+provide always-on availability or guaranteed emergency communications.
+Live mission snapshots/alerts, active PTT, elapsed in-memory timers and live GPS
+are not moved into PostgreSQL. Activate a saved profile again after server loss.
+Microphone selection and physical PTT mappings remain device-local.
+Native APK/EXE installers were not rebuilt. The authenticated browser/PWA is the
+tested path; older native audio-sidecar WebSockets still need a native update.
+Maintain private profile exports and database backups; never commit credentials.
+
+Official references (dashboard labels can change):
+https://neon.com/docs/connect/connect-from-any-app
+https://neon.com/pricing
+https://render.com/docs/configure-environment-variables
+https://render.com/docs/free

@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#05080a"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ULTRALINK"><link rel="apple-touch-icon" href="icon-180.png">
 <style>
   body{overflow:auto;overscroll-behavior:none}
-  #app{display:none;flex-direction:column;height:100dvh}
+  #app{display:none;flex-direction:column;height:calc(100dvh - var(--ul-account-strip-height,0px))}
   .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:10px;letter-spacing:.18em;color:var(--dim)}
   .hero{padding:16px 16px 10px;text-align:center}
   .cells{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -57,7 +57,7 @@
   @media (hover:hover) and (pointer:fine){ .keyhint{display:inline} }
 </style></head><body class="scan">
 
-<div class="center" id="login">
+<div class="center" id="login" inert aria-busy="true">
   <div style="text-align:center"><div class="brandicon" style="width:52px;height:52px;margin:0 auto 14px;display:block"></div><div class="logo" style="font-size:22px"><span class="wm" role="img" aria-label="ULTRALINK"></span></div><div class="sub" style="margin-top:8px">RIDER MODE</div></div>
   <div class="panel corner" style="width:min(420px,94vw);padding:20px">
     <label>Race / session code</label>

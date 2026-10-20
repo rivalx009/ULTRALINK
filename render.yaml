@@ -1,9 +1,12 @@
-# v1.12 accounts require a persistent disk plus UL_DATA_DIR=/var/data.
-# This existing free-plan blueprint does not provision or pay for a disk.
-# Configure storage in the dashboard BEFORE using accounts; see RELEASE-v1.12.md.
+# v1.12.1: Render Free web service + external Neon PostgreSQL.
+# No Render disk or Render database is required.
+# Existing services: add DATABASE_URL privately in Dashboard > Environment.
 services:
   - type: web
     name: ultralink
     runtime: docker
     plan: free
     healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false

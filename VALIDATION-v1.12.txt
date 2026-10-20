@@ -1,39 +1,50 @@
-ULTRALINK v1.12.0 validation
-==========================
-Local Node 24 / Chromium automated checks:
-- Account API/security checks: 20 passed
-- Account flow, profile portability, rider details, wind/weather UI: 21 passed
-- Existing full mission/planning/radio regression suite: 57 passed, 0 failed
-- Physical keyboard/HID PTT + microphone selection simulation: 32 passed, 0 failed
-- Emergency Frequency regression suite: 28 passed, 0 failed
-- Conflict handling/offline retention/account-backup restoration: 6 passed
-Total across these suites: 164 passed
+ULTRALINK v1.12.1 — POSTGRESQL UPDATE VALIDATION
+=============================================
+Tests use real local PostgreSQL 15.18, Node 24 and Chromium. No live Neon project
+or Render service was available; no production deployment was performed.
 
-Additional checks passed:
-- Account, session and complete profile persistence after a process restart.
-- Unauthenticated WebSockets rejected; authenticated connection accepted;
-  signed-out session rejected before processing another socket message.
-- Render account service fails closed when UL_DATA_DIR is missing.
-- Syntax checks for all server and public JavaScript.
-- Desktop 1600x950 and phone 390x844 screenshots inspected.
-- ZIP CRC and deployment file/privacy exclusions checked.
-- Open-Meteo endpoint with the implemented parameter set returned current
-  and hourly forecast JSON through the web retrieval tool.
+Automated suites (181 checks total):
+- Account API, authentication, cookies, isolation, password/session hashing: 20
+- Account UI, second-device profile sync, rider details, wind/weather UI: 21
+- Existing full mission/planning/radio regression: 57
+- Simulated Bluetooth/USB microphone and physical keyboard/HID PTT: 32
+- Emergency Frequency exact speech/presets/permissions/mobile layout: 28
+- Conflicting saves, offline retention and account-backup import: 6
+- PostgreSQL concurrency, process restart, sockets and legacy migration: 10
+- Missing DB config, database outage/recovery and secret-safe logging: 7
 
-Scope and limits:
-The browser tests mock weather responses, tile images and some audio/device
-interfaces. Radio tests use fake Chromium microphone streams. Bluetooth/HID
-inventory and button events, TTS and Android bridge callbacks are simulated.
-These tests do not validate physical microphones, real headsets, real cellular
-networks, actual GPS accuracy, native background radio or production load.
-The wind colours rank ambient wind-component magnitude, not measured drag.
-No Render deployment or independent security audit was performed.
-No native APK/EXE installer was rebuilt. See RELEASE-v1.12.md for limitations.
-The existing regression harnesses were adapted for account cookies and scoped
-profile keys; the hot-unplug test removes the mock device BEFORE emitting its
-track-ended event, and the wind assertion examines the full expanded panel.
+PostgreSQL-specific evidence:
+- Tables created on an empty real PostgreSQL database without manual SQL.
+- Two concurrent profile writes at the same version: one commits, one HTTP 409.
+- Concurrent same-callsign signup: one account, one conflict, no partial account.
+- Account, session, rider details and saved profile survive a server process restart.
+- Login on another device does not disconnect a valid existing WebSocket.
+- Logout rejects the next message from its existing WebSocket.
+- Legacy migration preserves the password hash, rider details, profiles and version.
+- Duplicate callsign rolls back the whole legacy import without overwriting data.
+- SQL-looking profile text remains data, not executable SQL.
+- Unavailable database returns 503, not a confirmed save or ephemeral-file fallback.
+- Pool reconnects after availability returns; prior profile remains unchanged.
+- Database URI/password are absent from captured startup/query failure logs.
 
-Production requirements:
-Configure an ACTUAL persistent server disk and UL_DATA_DIR before event use.
-Verify sign-in on a second real device and repeat after a Render redeploy.
-Verify radio and alerts audibly with the rider/escort hardware. Back up data.
+Corrections found during regression:
+The account strip's height is subtracted from the rider viewport, so emergency
+messages and PTT fit the tested 390x640 screen. Rider login controls remain inert
+until authenticated script initialization finishes; slower database initialization
+can no longer overwrite early typing before rider.js has initialized.
+
+Scope:
+Browser tests mock weather/tile responses, use fake microphone streams, and simulate
+Bluetooth/HID button/inventory events, browser TTS and native bridge callbacks.
+No physical Bluetooth accessory, actual mobile network, real GPS accuracy, production
+load, external TLS session to Neon or native background radio was validated.
+No native APK/EXE was rebuilt. Docker build was not run in this environment; its
+npm dependency-install step is separately checked from a clean extracted package.
+There is no independent security audit or safety-critical availability certification.
+
+Neon/Render setup still required:
+Set DATABASE_URL privately, verify the READY log, save and wait for ACCOUNT SYNCED,
+then verify on another real device and after a Render redeploy. Keep profile exports.
+Free-tier quotas/sleep/restarts still apply. Saved profiles are portable; live mission
+state, incident snapshots, PTT, GPS and in-memory timers are not migrated to PostgreSQL.
+The /health route measures process liveness, not database health.

@@ -1,15 +1,18 @@
 {
   "name": "ultralink",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "description": "Tactical cycling telemetry, tracking and PTT comms network (rider + escort modes) for Windows, macOS, Android and iOS browsers",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check accounts.js && node --check public/ul-account.js && node --check public/ul-weather.js && node --check public/escort.js"
+    "check": "node --check server.js && node --check accounts.js && node --check public/ul-account.js && node --check public/ul-weather.js && node --check public/escort.js && node --check postgres-store.js && node --check migrate-accounts.js"
   },
   "license": "UNLICENSED",
   "private": true,
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
   }
 }

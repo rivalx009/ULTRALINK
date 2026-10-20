@@ -1,0 +1,36 @@
+OPTIONAL: PRESERVE EXISTING v1.12.0 FILE-BASED ACCOUNTS
+
+Skip this if you never successfully created file-backed accounts. Browser race
+profiles can instead be imported/exported through ULTRALINK's planning screen.
+
+An empty Neon database does not automatically know old callsigns or passwords.
+BEFORE replacing/deploying the old service, export each user's profiles and make
+a PRIVATE backup of its actual UL_DATA_DIR/accounts.json if one exists. This file
+contains password hashes, personal rider details, profiles and session hashes.
+Never send it to chat, put it in public/, or commit it to GitHub.
+Do not start new signups for those callsigns in Neon before running migration.
+
+If you have that file locally and Node 22+ installed:
+1. Extract the update over a LOCAL copy of your full existing repository.
+2. Open PowerShell in that local project folder and run:
+   npm ci --omit=dev --ignore-scripts
+3. Enter the Neon URI privately without displaying it in shell history:
+   $secret = Read-Host 'Neon connection URI' -AsSecureString
+   $env:DATABASE_URL = [System.Net.NetworkCredential]::new('', $secret).Password
+4. Run the migration using the PRIVATE old-file path, for example:
+   node .\migrate-accounts.js 'C:\private-backup\accounts.json'
+5. Look for Imported N account(s). Then remove the temporary shell variable:
+   Remove-Item Env:DATABASE_URL
+   Remove-Variable secret
+6. Users sign in again on the deployed Neon-backed app; check profiles and rider
+   details from a second device. Keep the private backup until verified.
+
+The migration preserves scrypt hashes without needing users' plaintext passwords.
+It imports accounts/profiles atomically, not old sessions or live missions.
+A duplicate callsign aborts and rolls back the ENTIRE import. It NEVER overwrites
+that account. Do not delete the Neon account or reset data to force the import;
+resolve the collision deliberately and preserve both backups first.
+
+If you only used Render Free's ephemeral filesystem and the old account file
+has already disappeared, no migration tool can reconstruct that file. Preserve
+any browser exports/local profiles and create accounts anew as appropriate.

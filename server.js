@@ -1,5 +1,5 @@
 /**
- * ULTRALINK relay server — zero dependencies (Node 18+).
+ * ULTRALINK relay server — PostgreSQL-backed accounts (Node 22+).
  * Serves the PWA and relays mission state, telemetry and WebRTC signalling.
  *
  *   node server.js            -> http  on :8080
@@ -44,7 +44,7 @@ async function serve(req, res) {
   let url;
   try { url=decodeURIComponent((req.url||'/').split('?')[0]); } catch {res.writeHead(400);return res.end('Bad URL');}
   const modeFiles={'/escort.html':'escort','/rider.html':'rider','/comms.html':'comms'};
-  if(modeFiles[url]&&!accounts.session(req)) {res.writeHead(302,{'Location':'/?mode='+modeFiles[url],'Cache-Control':'no-store'});return res.end();}
+  if(modeFiles[url]){try{if(!await accounts.authenticate(req)){res.writeHead(302,{'Location':'/?mode='+modeFiles[url],'Cache-Control':'no-store'});return res.end();}}catch{res.writeHead(503,{'Content-Type':'text/plain','Cache-Control':'no-store'});return res.end('Account database unavailable. Please retry shortly.');}}
 
   if (url === '/') url = '/index.html';
   if (url === '/health') { res.writeHead(200); return res.end('ok'); }
@@ -91,8 +91,10 @@ const server = USE_TLS
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const clients = new Set();
 
-server.on('upgrade', (req, socket) => {
-  const auth=accounts.session(req);
+server.on('upgrade', async (req, socket) => {
+  socket.once('error',()=>socket.destroy());
+  let auth;try{auth=await accounts.authenticate(req);}catch{socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');return;}
+  if(socket.destroyed)return;
   const origin=req.headers.origin;
   if(!auth || (origin && (()=>{try{return new URL(origin).host!==req.headers.host;}catch{return true;}})())){socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');return;}
   const key = req.headers['sec-websocket-key'];
@@ -121,7 +123,7 @@ class Client {
     socket.on('data', (d) => this.onData(d));
     socket.on('error', () => this.close());
     socket.on('close', () => this.close());
-    this.ping = setInterval(() => { if(!accounts.session(this.authRequest)){this.close();return;}if (this.alive) this.frame(0x9, Buffer.alloc(0)); }, 20000);
+    this.ping = setInterval(async () => { if(this.checkingAuth)return;this.checkingAuth=true;try{if(!await accounts.authenticate(this.authRequest)){this.close();return;}if(this.alive)this.frame(0x9,Buffer.alloc(0));}catch{this.close();}finally{this.checkingAuth=false;} }, 20000);
   }
   onData(d) {
     if(!accounts.session(this.authRequest)){this.close();return;}

@@ -1,45 +1,59 @@
-# ULTRALINK v1.12.0 — accounts, rider details, component wind and forecast
+# ULTRALINK v1.12.1 — Neon PostgreSQL account storage
 
-## Before deployment: persistent storage is REQUIRED
+## Start here
+Read NEON-SETUP-v1.12.1.txt for the step-by-step Render Free + Neon Free setup.
+This replaces v1.12.0's disk-based account backend. No Render disk is required.
+Use Node 22+, run `npm ci --omit=dev --ignore-scripts`, set DATABASE_URL privately,
+then `npm start`. Docker installs the pinned pg dependency automatically.
 
-This release adds real server-side accounts, not a callsign-only browser save.
-Every device must open the SAME ULTRALINK server URL and use the same account
-callsign/password to access that account's profiles. Separate local servers do
-not synchronize with one another.
+Accounts, salted password hashes, rider details, saved race/training profiles,
+profile versions and hashed sign-in sessions are stored in PostgreSQL. Tables
+are created automatically; no SQL needs to be pasted into the Neon console.
+All devices must use the SAME hosted ULTRALINK HTTPS URL and account.
+Separate local servers synchronize account data only if pointed at the same DB;
+live mission/radio state is still single-server, not multi-instance clustered.
 
-No hosting changes or purchases have been made. The existing render.yaml still
-uses its original free plan; it does NOT silently buy a disk or change plans.
-On Render, account operations deliberately return a clear 503 error unless
-UL_DATA_DIR is configured. Pointing it at an ephemeral folder is NOT sufficient.
+The connection pool has at most three connections and releases idle connections
+after ten seconds. Remote database TLS certificates are verified. Queries use
+parameters; profile updates use an atomic version check. The service never falls
+back to an ephemeral account file if the database is unavailable. SQL error logs
+contain error codes, not connection strings or password-bearing error details.
+Existing live WebSockets use cached authentication between 20-second database
+revalidations, rather than a query for every audio/telemetry frame. A successful
+sign-out invalidates the local cached session; other processes detect revocation
+at revalidation. A DB failure during revalidation closes that socket fail-closed.
 
-### Existing Render service
-1. Back up/export your current race profiles before replacing the release.
-2. Choose a Render service configuration that supports a persistent disk.
-   Render's persistent disks require a paid service. Review Render's terms/cost
-   yourself before making any hosting change.
-3. Add a disk mounted at `/var/data` in that service's dashboard.
-4. Add environment variable `UL_DATA_DIR=/var/data`.
-5. Deploy this source to that SAME service, using HTTPS and one server instance.
-6. Confirm account signup, create/save a test profile and wait for ACCOUNT SYNCED.
-7. Sign in from another device and verify the profile is present.
-8. Restart/redeploy and repeat the check BEFORE relying on this for an event.
+DATABASE_URL is a SECRET. Enter it in Render Environment only. Never commit it,
+put it in public JavaScript, paste it in chat or include it in a screenshot.
+UL_DATA_DIR is no longer account storage; it only changes the location of legacy
+live mission snapshots. On Render Free those snapshots remain ephemeral.
+A saved profile in Neon survives a web-server restart. Active live mission state,
+incident snapshots, live GPS, PTT, in-memory timers and open mission connections
+do NOT become durable or automatically fail over just because Neon is connected.
 
-Only files under the actual mounted persistent disk survive a redeploy. The app
-cannot verify that a directory named /var/data is really a mounted Render disk.
-Do not set UL_DATA_DIR without also mounting durable storage there.
+### Existing data: back up BEFORE replacing v1.12.0
+Browser profiles and the old accounts.json are not automatically uploaded.
+- If profiles were saved before accounts: on the original browser, sign into
+  the Neon-backed deployment, then use IMPORT PROFILES FROM THIS DEVICE.
+- If profiles were saved in a v1.12.0 account: EXPORT that account's profiles
+  BEFORE deployment. After migration/import, use planning IMPORT and wait for
+  ACCOUNT SYNCED. Keep the backup until a second device confirms the data.
+- If actual v1.12.0 accounts already exist and you have their private accounts.json:
+  an optional migrate-accounts.js utility preserves callsigns, password hashes,
+  rider details and profiles. Read MIGRATION-v1.12.1.txt BEFORE new users sign up.
+  It never overwrites a duplicate callsign and rolls back the entire batch on a
+  collision. Old sessions are deliberately not imported: sign in again.
+- A new empty Neon database does not know old file-based passwords/accounts until
+  migrated. Do not interpret a fresh SIGN UP prompt as proof the old data is safe.
+- If old ephemeral server data has already disappeared, this update cannot recover
+  it. Preserve browser exports; do not clear browser storage while unsynced.
 
-If you want to keep a free web service, a separate durable database integration
-would be needed; that alternative is not implemented in this file-based release.
-The file store is intentionally SINGLE PROCESS / SINGLE INSTANCE. Do not run
-multiple workers, replicas or servers against the same account file.
-
-### Local use
-Node 18+ supports the server; the Dockerfile retains Node 22. Run `node server.js`
-and open http://localhost:8080. No npm packages or build step are needed.
-Account data lives in `data/accounts.json` by default locally. Back up this folder
-securely. UL_DATA_DIR can point to another persistent local directory. For access
-from other computers use HTTPS; account operations reject cleartext remote HTTP.
-The existing `--tls` flow remains available with your certificates.
+### Local development
+Set DATABASE_URL in the shell's private environment, install packages with npm ci,
+and run npm start from this folder. Loopback HTTP is allowed for development;
+remote account operations require HTTPS. There is no longer a zero-dependency
+local account backend. The optional Windows launchers require DATABASE_URL too.
+Never commit an .env file or a private legacy accounts.json.
 
 ## 1. Accounts
 - The original Rider / Escort / Comms mode buttons remain unchanged.
@@ -129,7 +143,8 @@ This release retains the existing server/public layout, warnings, rider-down and
 mechanical controls, Emergency Frequency text-to-speech, maps, profile planning,
 radio, Bluetooth input selection and physical keyboard/HID PTT. No node_modules,
 compiler, ESP32 firmware, screenshot files or test account database is deployed.
-Added runtime files: accounts.js, public/ul-account.js, public/ul-weather.js.
+Account runtime files: accounts.js and postgres-store.js; public account/weather
+scripts remain unchanged. pg is installed from package-lock.json during build.
 Native Windows/Android installers and APKs have NOT been rebuilt or hardware
 verified. The browser/PWA is the tested target. Older native audio-sidecar code
 that opens its own WebSocket without the authenticated WebView session cookie
@@ -137,11 +152,14 @@ needs a native update; do not assume background native radio will work in this
 account-gated release. Browser foreground radio retains its existing path.
 
 ## Operational limitations
-The source is not deployed. Configure durable storage and test on your own
-HTTPS deployment and real rider/escort devices before event use. Maintain backups
-of the private data folder, never commit it. This release does not replace an
+The source is not deployed. Configure DATABASE_URL and test your own HTTPS
+deployment and real rider/escort devices before event use. Maintain private
+profile exports and database backups. Never commit account/session data. This release does not replace an
 emergency service or safety-critical communications channel.
 
 References:
-- https://render.com/docs/disks
+- https://render.com/docs/free
+- https://render.com/docs/configure-environment-variables
+- https://neon.com/docs/connect/connect-from-any-app
+- https://neon.com/pricing
 - https://open-meteo.com/en/docs

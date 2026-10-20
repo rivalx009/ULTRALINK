@@ -1,6 +1,8 @@
-# ULTRALINK v1.12.0
+# ULTRALINK v1.12.1
 
-**Start with RELEASE-v1.12.md.** Accounts require durable server storage before deployment. The sections below are retained historical setup notes; v1.12 changes and limitations take precedence.
+**Start with NEON-SETUP-v1.12.1.txt and RELEASE-v1.12.md.** Accounts now require a private DATABASE_URL pointing to PostgreSQL, not a Render disk. Node 22+ and `npm ci --omit=dev --ignore-scripts` are required for local use; Docker installs dependencies automatically.
+
+**The sections below are historical release notes, not current installation instructions.** Earlier claims of zero dependencies, disk-based account storage or native background-radio compatibility do not apply to this account-gated release. The latest setup and limitations above take precedence.
 
 ## v1.11.2 — non-invasive Escort startup
 

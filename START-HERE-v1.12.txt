@@ -1,23 +1,18 @@
-ULTRALINK v1.12.0
-================
-Read RELEASE-v1.12.md BEFORE deploying.
+ULTRALINK v1.12.1 — NEON POSTGRESQL UPDATE
 
-This is source code, not an already deployed update.
+1. Read NEON-SETUP-v1.12.1.txt for the complete setup.
+2. Keep Render on Free. Create a Neon Free project separately.
+3. Enter Neon's pooled PostgreSQL connection string as DATABASE_URL in your
+   Render web service's private Environment settings. No Render disk needed.
+4. Upload the EXTRACTED update files to the existing repository root, preserving
+   public/ paths. Do NOT upload the ZIP itself. Keep all other app files.
+5. Deploy, look for POSTGRES ACCOUNT STORAGE READY, then test cross-device sync.
 
-RENDER STORAGE IS REQUIRED FOR ACCOUNTS:
-- Persistent disk mounted at /var/data
-- Environment: UL_DATA_DIR=/var/data
-- Same HTTPS server URL on all devices
-- One server instance/process
-- No hosting upgrade or purchase has been performed for you.
-- The original free-plan render.yaml is retained, not silently upgraded.
+IMPORTANT: Export existing profiles BEFORE changing the backend. The old
+accounts.json does not move automatically. If accounts already exist, read
+MIGRATION-v1.12.1.txt before users sign up in the new database.
 
-After signing in on your original laptop:
-1. Escort planning -> IMPORT PROFILES FROM THIS DEVICE
-2. Confirm that the device profiles belong to your account
-3. Wait for ACCOUNT SYNCED
-4. Sign in with the same callsign/password on the other device
-
-Browser/PWA is the tested target. Native installers were not rebuilt;
-legacy Android background-radio sidecars need an authenticated native update.
-Use the browser/PWA for this release's tested foreground radio behavior.
+This is a cumulative UPDATE for the v1.11.2 or v1.12.0 repository, not a standalone
+application. It includes the prior account/rider/wind/weather changes. No tests,
+node_modules, screenshots, private stores or compiled app installers are included.
+No hosting account has been created, connected, charged or deployed for you.
