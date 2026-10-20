@@ -1,3 +1,6 @@
+# v1.12 accounts require a persistent disk plus UL_DATA_DIR=/var/data.
+# This existing free-plan blueprint does not provision or pay for a disk.
+# Configure storage in the dashboard BEFORE using accounts; see RELEASE-v1.12.md.
 services:
   - type: web
     name: ultralink

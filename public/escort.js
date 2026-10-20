@@ -20,6 +20,16 @@
     canTransmit:()=>opsStarted&&!ended&&!emergencyMode&&link.ready, transmitting:()=>pttOpen
   });
   link.on('close',()=>hardware.release('LINK LOST — PTT RELEASED'));
+  const forecast=new UL.WeatherWidget(()=>{
+    if(opsStarted){
+      const u=sel==='self'?selfUnit():units.get(sel),d=u?.data;
+      if(u&&u.role==='rider')return d?.lat!=null?{lat:d.lat,lon:d.lon,name:u.callsign,stale:Date.now()-u.ts>12000}:null;
+      if(d?.lat!=null)return{lat:d.lat,lon:d.lon,name:u?.callsign||myCall};
+      const p=route?.points[0];return p?{lat:p.lat,lon:p.lon,name:'ROUTE START'}:null;
+    }
+    const p=UL.Plan._debug.built?.points[0];return p?{lat:p.lat,lon:p.lon,name:UL.Plan._debug.cur?.name||'ROUTE START'}:null;
+  });
+  addEventListener('ul-weather-toggle',e=>{if(e.detail.expanded&&isPhone()){popOff=true;renderPop(true);}setTimeout(()=>map?.invalidateSize(),100);});
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
   /* ================================================================== BOOT */
@@ -115,7 +125,7 @@
     log('SYS', 'MISSION ' + mission.code + ' ACTIVE — riders can join with the code', '#7cff5a');
     cfg.onchange = () => applyLiveSettings();
     setInterval(tick, 500);
-    wind.addEventListener('update', () => renderWindTag());
+    wind.addEventListener('update', () => {renderWindTag();renderPop(true);});
     if (route) { wind.loadRoute(route); setInterval(() => wind.loadRoute(route), 120000); }
     fx.success();
   });
@@ -127,7 +137,7 @@
       ids.add(u.id);
       const cur = units.get(u.id) || { data: {}, ts: 0 };
       const isNew = !units.has(u.id);
-      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color, incidentOnly: false }));
+      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color, riderName:u.riderName, weightKg:u.weightKg, incidentOnly: false }));
       if (isNew && opsStarted) {
         log('SYS', `${u.callsign} (${u.role.toUpperCase()}) CONNECTED`, u.color); UL.toast(`${u.callsign} CONNECTED`, 'ok'); fx.success();
         if (u.role === 'rider' && u.callsign === leadName && sel === 'self') { sel = u.id; follow = true; G.zoomed = true; }   // lead rider becomes the main follow-up
@@ -186,7 +196,7 @@
     sel = id; follow = true; flyUntil = Date.now() + 900; G.zoomed = true; popOff = false; syncFollowBtn(); closeOpsSector(true);
     const d = id === 'self' ? tel.state : units.get(id)?.data;
     if (d && d.lat != null) map.flyTo([d.lat, d.lon], Math.max(map.getZoom(), cfg.v.zoomFollow), { duration: .7 });
-    fx.select(); renderSel(); renderUnits(); renderPop(true);
+    fx.select(); renderSel(); renderUnits(); renderPop(true); forecast.update();
     if (isPhone() && mTab !== 'map') setTab('map');
   }
   function removeUnit(id) { OFF.delete(id); renderOff(); const u = units.get(id); if (u && u.marker) { map.removeLayer(u.marker); u.trail && map.removeLayer(u.trail); } removeCard(id); units.delete(id); if (sel === id) { sel = 'self'; renderSel(); renderPop(true); } }
@@ -567,28 +577,25 @@
     $('btnWind').className = 'ghost' + (w ? '' : ' danger');
   }
   function diagram(adv, col) {
-    const rr = (deg, r) => [80 + r * Math.sin(deg * Math.PI / 180), 80 - r * Math.cos(deg * Math.PI / 180)];
-    const [ax, ay] = rr(adv.beta, 68), [bx, by] = rr(adv.beta, 24), [tx, ty] = rr(adv.trueRel, 68), [ux, uy] = rr(adv.trueRel, 30);
-    const north = rr(-(adv.headingUsed || 0), 72);
-    const p = adv.pos;
-    return `<svg viewBox="0 0 160 160" style="width:100%;max-width:220px;display:block;margin:0 auto">
-      <circle cx="80" cy="80" r="70" fill="none" stroke="var(--line2)"/><circle cx="80" cy="80" r="46" fill="none" stroke="var(--line)" stroke-dasharray="2 4"/>
-      <line x1="80" y1="6" x2="80" y2="154" stroke="var(--line)"/><line x1="6" y1="80" x2="154" y2="80" stroke="var(--line)"/>
-      <text x="${north[0]}" y="${north[1] + 3}" font-size="8" fill="var(--dim)" text-anchor="middle">N</text>
-      <ellipse cx="${80 + p[0]}" cy="${80 + p[1]}" rx="15" ry="11" fill="${adv.value === 'HIGH' ? '#7cff5a' : adv.value === 'MEDIUM' ? '#ffb000' : '#5d8794'}" fill-opacity=".22" stroke="${adv.value === 'HIGH' ? '#7cff5a' : adv.value === 'MEDIUM' ? '#ffb000' : '#5d8794'}" stroke-dasharray="3 2"/>
-      <text x="${80 + p[0]}" y="${80 + p[1] + 3}" font-size="7" fill="var(--fg)" text-anchor="middle">COVER</text>
-      <line x1="${tx}" y1="${ty}" x2="${ux}" y2="${uy}" stroke="var(--dim)" stroke-width="1.4" stroke-dasharray="3 3"/>
-      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="2.6"/>
-      <polygon points="${bx},${by} ${bx + 5 * Math.cos((adv.beta) * Math.PI / 180) - 6 * Math.sin(adv.beta * Math.PI / 180)},${by + 5 * Math.sin(adv.beta * Math.PI / 180) + 6 * Math.cos(adv.beta * Math.PI / 180)} ${bx - 5 * Math.cos(adv.beta * Math.PI / 180) - 6 * Math.sin(adv.beta * Math.PI / 180)},${by - 5 * Math.sin(adv.beta * Math.PI / 180) + 6 * Math.cos(adv.beta * Math.PI / 180)}" fill="var(--warn)"/>
-      <polygon points="80,66 92,80 80,94 68,80" fill="${col}" stroke="#03090c" stroke-width="1.3"/><line x1="80" y1="66" x2="80" y2="52" stroke="${col}" stroke-width="2"/>
-      <text x="80" y="14" font-size="7" fill="var(--dim)" text-anchor="middle">TRAVEL ▲</text></svg>`;
+    const c=UL.windComponents(adv.head,adv.cross),head=c.head,cross=c.cross;
+    const arrow=(x1,y1,x2,y2,color)=>{const a=Math.atan2(y2-y1,x2-x1),l=8;return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="4"/><polygon points="${x2},${y2} ${x2-l*Math.cos(a-.5)},${y2-l*Math.sin(a-.5)} ${x2-l*Math.cos(a+.5)},${y2-l*Math.sin(a+.5)}" fill="${color}"/>`;};
+    return `<svg viewBox="0 0 240 180" role="img" aria-label="${head.label} ${wsp(Math.abs(adv.head))}; crosswind from ${adv.cross>=0?'right':'left'} ${wsp(Math.abs(adv.cross))}" style="width:100%;max-width:280px;display:block;margin:0 auto">
+      <circle cx="120" cy="90" r="56" fill="none" stroke="var(--line2)"/>
+      ${arrow(120,adv.head>=0?35:145,120,adv.head>=0?66:114,head.color)}
+      ${arrow(adv.cross>=0?182:58,90,adv.cross>=0?144:96,90,cross.color)}
+      <polygon points="120,74 130,90 120,106 110,90" fill="${col}" stroke="#03090c"/>
+      <text x="120" y="14" fill="var(--fg)" font-size="10" text-anchor="middle">TRAVEL ↑</text>
+      <text x="120" y="167" fill="${head.color}" font-size="11" text-anchor="middle">${head.label} ${wsp(Math.abs(adv.head))}</text>
+      <text x="120" y="179" fill="${cross.color}" font-size="10" text-anchor="middle">CROSS FROM ${adv.cross>=0?'RIGHT':'LEFT'} ${wsp(Math.abs(adv.cross))}</text></svg>
+      <div class="wind-components"><span style="color:${head.color}">${head.label}${head.dominant?' · DOMINANT RESISTIVE COMPONENT':''}</span><span style="color:${cross.color}">CROSSWIND${cross.dominant?' · DOMINANT RESISTIVE COMPONENT':''}</span></div>
+      <div class="hint" style="margin:8px 0">Red = strongest adverse wind component; amber/yellow = lower component strength; green = tailwind. Colours compare model wind speed components, not measured aerodynamic drag. Rider speed can still create apparent headwind.</div>`;
   }
   let popSig = '';
   function renderPop(force) {
     const pop = $('riderPop'), u = units.get(sel);
     $('map').classList.toggle('popopen', !!(u && u.role === 'rider' && !popOff));
     if (!u || u.role !== 'rider' || popOff) { if (pop.classList.contains('show')) { pop.classList.remove('in'); setTimeout(() => { if (!pop.classList.contains('in')) pop.classList.remove('show'); }, 300); } popSig = ''; return; }
-    const d = u.data || {}, col = cfg.colorFor(u.callsign, u.color), hd = heading(d), w = unitWind(d);
+    const d = u.data || {}, col = cfg.colorFor(u.callsign, u.color), hd = (Number.isFinite(d.heading)||(route&&d.covered!=null))?heading(d):null, w = unitWind(d);
     const adv = w ? UL.advise({ speed: d.speed, heading: hd, wind: w, grade: d.grade }) : null;
     if (adv) adv.headingUsed = hd;
     const S = v => v == null ? '--' : cfg.speed(v).toFixed(1), D = v => v == null ? '--' : cfg.dist(v).toFixed(2);
@@ -599,8 +606,9 @@
       <div><div class="k">ELEV ${cfg.elevU()}</div><div class="v">${d.ele == null ? '--' : Math.round(cfg.elev(d.ele))}</div></div><div><div class="k">REMAIN ${cfg.distU()}</div><div class="v">${D(d.remaining)}</div></div><div><div class="k">ETA</div><div class="v">${d.eta ? cfg.time(d.eta) : '--:--'}</div></div>
       <div><div class="k">DIST TO ME ${cfg.distU()}</div><div class="v">${(d.lat != null && self.lat != null) ? D(UL.haversine({ lat: self.lat, lon: self.lon }, { lat: d.lat, lon: d.lon })) : '--'}</div></div><div><div class="k">AVG ${cfg.speedU()}</div><div class="v">${S(d.avg)}</div></div><div><div class="k">COVERED ${cfg.distU()}</div><div class="v">${D(d.covered)}</div></div></div>
       ${(() => { const av = advView(u); return av ? `<div class="psec">ADVISED SPEED · FINISH ON TARGET</div><div class="padv ${av.cls}"><b>${av.val}<small> ${av.unit}</small></b><span>${av.note}${av.avg ? `<br><span class="muted">AVG TO FINISH ${av.avg} ${av.unit} · TARGET ${UL.fmt.hms(targetSec)}</span>` : ''}</span></div>` : ''; })()}
-      <div class="psec">WIND ON RIDER</div>`;
-    if (!adv) h += `<div class="hint" style="line-height:1.7">No wind data yet (${wind.status === 'error' ? 'wind service unreachable: ' + esc(wind.error) : 'loading…'}).<br><button class="ghost" id="popWind" style="margin-top:8px;width:100%">SET WIND MANUALLY</button></div>`;
+      <div class="hint">${esc(u.riderName||'')}${u.weightKg?' · '+esc(u.weightKg)+' KG':''}</div><div class="psec">WIND ON ${esc(u.callsign)}${Date.now()-u.ts>12000?' · STALE RIDER GPS':''}</div>`;
+    if (!adv && w && hd==null) h += '<p class="hint">Rider heading unavailable. Move the rider or obtain a route position to resolve head/tailwind and crosswind.</p>';
+    else if (!adv) h += `<div class="hint" style="line-height:1.7">No wind data yet (${wind.status === 'error' ? 'wind service unreachable: ' + esc(wind.error) : 'loading…'}).<br><button class="ghost" id="popWind" style="margin-top:8px;width:100%">SET WIND MANUALLY</button></div>`;
     else {
       const hw = adv.head >= 0 ? 'HEADWIND' : 'TAILWIND', cw = adv.cross >= 0 ? 'RIGHT' : 'LEFT';
       h += diagram(adv, col) + `<div class="pgrid" style="margin-top:8px">
@@ -609,8 +617,8 @@
         <div><div class="k">GUST</div><div class="v" style="font-size:12px">${wsp(adv.gust)}</div></div>
         <div><div class="k">HITTING FROM</div><div class="v" style="font-size:11px">${adv.relLabel}</div></div>
         <div><div class="k">APPARENT</div><div class="v" style="font-size:12px">${wsp(adv.appSpeed)}</div></div>
-        <div><div class="k">${hw}</div><div class="v" style="font-size:12px;color:${adv.head >= 0 ? 'var(--bad)' : 'var(--good)'}">${wsp(Math.abs(adv.head))}</div></div>
-        <div><div class="k">CROSS FROM ${cw}</div><div class="v" style="font-size:12px">${wsp(Math.abs(adv.cross))}</div></div>
+        <div><div class="k">${hw}</div><div class="v" style="font-size:12px;color:${UL.windComponents(adv.head,adv.cross).head.color}">${wsp(Math.abs(adv.head))}</div></div>
+        <div><div class="k">CROSS FROM ${cw}</div><div class="v" style="font-size:12px;color:${UL.windComponents(adv.head,adv.cross).cross.color}">${wsp(Math.abs(adv.cross))}</div></div>
         <div><div class="k">WIND COST</div><div class="v" style="font-size:12px;color:${adv.costW > 0 ? 'var(--bad)' : 'var(--good)'}">${adv.costW > 0 ? '+' : ''}${adv.costW} W</div></div>
         <div><div class="k">SOURCE</div><div class="v" style="font-size:12px">${adv.src}</div></div></div>
         <div class="psec">DRAFTING ADVICE</div>

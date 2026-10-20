@@ -1,0 +1,39 @@
+ULTRALINK v1.12.0 validation
+==========================
+Local Node 24 / Chromium automated checks:
+- Account API/security checks: 20 passed
+- Account flow, profile portability, rider details, wind/weather UI: 21 passed
+- Existing full mission/planning/radio regression suite: 57 passed, 0 failed
+- Physical keyboard/HID PTT + microphone selection simulation: 32 passed, 0 failed
+- Emergency Frequency regression suite: 28 passed, 0 failed
+- Conflict handling/offline retention/account-backup restoration: 6 passed
+Total across these suites: 164 passed
+
+Additional checks passed:
+- Account, session and complete profile persistence after a process restart.
+- Unauthenticated WebSockets rejected; authenticated connection accepted;
+  signed-out session rejected before processing another socket message.
+- Render account service fails closed when UL_DATA_DIR is missing.
+- Syntax checks for all server and public JavaScript.
+- Desktop 1600x950 and phone 390x844 screenshots inspected.
+- ZIP CRC and deployment file/privacy exclusions checked.
+- Open-Meteo endpoint with the implemented parameter set returned current
+  and hourly forecast JSON through the web retrieval tool.
+
+Scope and limits:
+The browser tests mock weather responses, tile images and some audio/device
+interfaces. Radio tests use fake Chromium microphone streams. Bluetooth/HID
+inventory and button events, TTS and Android bridge callbacks are simulated.
+These tests do not validate physical microphones, real headsets, real cellular
+networks, actual GPS accuracy, native background radio or production load.
+The wind colours rank ambient wind-component magnitude, not measured drag.
+No Render deployment or independent security audit was performed.
+No native APK/EXE installer was rebuilt. See RELEASE-v1.12.md for limitations.
+The existing regression harnesses were adapted for account cookies and scoped
+profile keys; the hot-unplug test removes the mock device BEFORE emitting its
+track-ended event, and the wind assertion examines the full expanded panel.
+
+Production requirements:
+Configure an ACTUAL persistent server disk and UL_DATA_DIR before event use.
+Verify sign-in on a second real device and repeat after a Render redeploy.
+Verify radio and alerts audibly with the rider/escort hardware. Back up data.

@@ -15,7 +15,8 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || (process.argv.includes('--tls') ? 8443 : 8080);
 const USE_TLS = process.argv.includes('--tls');
 const PUBLIC = path.join(__dirname, 'public');
-const STORE = path.join(__dirname, 'missions.json');
+const accounts = require('./accounts')();
+const STORE = path.join(accounts.dataDir || __dirname, 'missions.json');
 
 /* ---------------------------------------------------------------- storage */
 let missions = {};           // code -> { code, name, createdAt, route, riders[], waypoints[] }
@@ -36,8 +37,15 @@ const MIME = {
   '.webmanifest': 'application/manifest+json', '.gpx': 'application/gpx+xml', '.mp3': 'audio/mpeg', '.apk': 'application/vnd.android.package-archive', '.exe': 'application/vnd.microsoft.portable-executable'
 };
 
-function serve(req, res) {
-  let url = decodeURIComponent((req.url || '/').split('?')[0]);
+async function serve(req, res) {
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('Referrer-Policy','same-origin');
+  if(await accounts.route(req,res))return;
+  let url;
+  try { url=decodeURIComponent((req.url||'/').split('?')[0]); } catch {res.writeHead(400);return res.end('Bad URL');}
+  const modeFiles={'/escort.html':'escort','/rider.html':'rider','/comms.html':'comms'};
+  if(modeFiles[url]&&!accounts.session(req)) {res.writeHead(302,{'Location':'/?mode='+modeFiles[url],'Cache-Control':'no-store'});return res.end();}
+
   if (url === '/') url = '/index.html';
   if (url === '/health') { res.writeHead(200); return res.end('ok'); }
   if (url === '/apps.json' || url === '/ultralink-desktop-setup.exe') {   // Windows installer: in public/ or hosted elsewhere (GitHub Release)
@@ -84,6 +92,9 @@ const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const clients = new Set();
 
 server.on('upgrade', (req, socket) => {
+  const auth=accounts.session(req);
+  const origin=req.headers.origin;
+  if(!auth || (origin && (()=>{try{return new URL(origin).host!==req.headers.host;}catch{return true;}})())){socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');return;}
   const key = req.headers['sec-websocket-key'];
   if (!key) return socket.destroy();
   const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
@@ -94,6 +105,7 @@ server.on('upgrade', (req, socket) => {
   );
   socket.setNoDelay(true);
   const c = new Client(socket);
+  c.account=auth.callsign;c.authRequest={headers:{cookie:req.headers.cookie}};
   clients.add(c);
 });
 
@@ -109,9 +121,10 @@ class Client {
     socket.on('data', (d) => this.onData(d));
     socket.on('error', () => this.close());
     socket.on('close', () => this.close());
-    this.ping = setInterval(() => { if (this.alive) this.frame(0x9, Buffer.alloc(0)); }, 20000);
+    this.ping = setInterval(() => { if(!accounts.session(this.authRequest)){this.close();return;}if (this.alive) this.frame(0x9, Buffer.alloc(0)); }, 20000);
   }
   onData(d) {
+    if(!accounts.session(this.authRequest)){this.close();return;}
     this.buf = Buffer.concat([this.buf, d]);
     while (true) {
       const f = this.decode();
@@ -187,7 +200,7 @@ function unitById(code, id) {
 function deliver(p, msg) { p.send(msg); const s = sidecar(p.mission, p.id); if (s) s.send(msg); }
 function roster(code) {
   return peers(code, null).map(c => ({
-    id: c.id, role: c.role, callsign: c.callsign, color: c.color, telemetry: c.telemetry
+    id: c.id, role: c.role, callsign: c.callsign, color: c.color, telemetry: c.telemetry, riderName:c.riderName||'', weightKg:c.weightKg||null
   }));
 }
 function broadcastRoster(code) {
@@ -207,12 +220,14 @@ function alertState(code) {
 }
 const emergencyMessages = new Map(); // short-lived delivery/playback receipts, never mission persistence
 function handle(c, m) {
+  if(!accounts.session(c.authRequest)){c.send({t:'error',code:'AUTH_REQUIRED',msg:'Sign in again.'});c.close();return;}
   switch (m.t) {
     case 'mission.create': {
       const code = (m.code || genCode()).toUpperCase();
       const prev = missions[code] || {};
+      if(prev.owner && prev.owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Mission belongs to another account.'});
       missions[code] = Object.assign(prev, {
-        code, name: m.name || 'UNNAMED OP', createdAt: prev.createdAt || Date.now(),
+        code, owner:c.account, name: m.name || 'UNNAMED OP', createdAt: prev.createdAt || Date.now(),
         route: m.route || [], riders: m.riders || [], distance: m.distance || 0,
         sectors: m.sectors || [], startAt: m.startAt || null, targetSec: m.targetSec || prev.targetSec || null, lead: m.lead || prev.lead || null,
         kind: m.kind === 'training' ? 'training' : 'race', laps: Math.max(1, Math.min(50, m.laps | 0 || 1)), lapLen: m.lapLen || 0, lapTargets: Array.isArray(m.lapTargets) ? m.lapTargets : [],
@@ -229,7 +244,9 @@ function handle(c, m) {
     }
     case 'mission.update': {
       if (missions[m.code]) {
-        Object.assign(missions[m.code], m.patch || {});
+        if(missions[m.code].owner && missions[m.code].owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Only the mission owner can edit it.'});
+        const patch={...m.patch};delete patch.owner;delete patch.code;
+        Object.assign(missions[m.code], patch);
         if (m.patch && m.patch.startAt !== undefined) missions[m.code].autoStarted = false;
         persist();
         broadcast(m.code, { t: 'mission', mission: missions[m.code] }, null);
@@ -239,6 +256,7 @@ function handle(c, m) {
     case 'mission.clock': {
       const mis = missions[m.code];
       if (!mis) return;
+      if(mis.owner&&mis.owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Only the mission owner can control the clock.'});
       if (m.action === 'start') { mis.clockStart = Date.now(); mis.clockStop = null; }
       if (m.action === 'stop') { mis.clockStop = Date.now(); }
       if (m.action === 'reset') { mis.clockStart = null; mis.clockStop = null; }
@@ -250,6 +268,7 @@ function handle(c, m) {
     case 'mission.abort': {
       const code = m.code;
       if (!missions[code]) return;
+      if(missions[code].owner&&missions[code].owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Only the mission owner can end it.'});
       const reason = m.reason || (m.mode === 'close' ? 'MISSION CLOSED' : 'MISSION ABORTED');
       const payload = { t: 'mission.ended', mode: m.mode === 'close' ? 'close' : 'abort', reason, by: c.callsign || 'ESCORT' };
       const all = [...clients].filter(p => p.mission === code && p.alive);   // units + radio sidecars
@@ -278,6 +297,7 @@ function handle(c, m) {
         const owner = String(m.owner || '');
         if (!/^[0-9a-f-]{36}$/i.test(owner)) return c.send({ t: 'error', code: 'BAD_OWNER', msg: 'Radio owner id missing' });
         for (const x of [...clients]) if (x !== c && x.audioOf === owner) { x.replaced = true; x.close(); }   // one radio per unit
+        const unit=unitById(code,owner);if(!unit||unit.account!==c.account)return c.send({t:'error',code:'BAD_OWNER',msg:'Radio requires the owner account session.'});
         c.mission = code; c.audioOf = owner; c.role = 'audio';
         c.callsign = String(m.callsign || 'UNKNOWN').toUpperCase().slice(0, 24);
         return c.send({ t: 'joined', id: c.id, audio: true, owner, mission: { code, name: mis.name } });
@@ -285,11 +305,15 @@ function handle(c, m) {
       /* same device reconnecting: keep its id so peers keep their voice link and card */
       if (typeof m.resume === 'string' && /^[0-9a-f-]{36}$/i.test(m.resume) && m.resume !== c.id) {
         const old = [...clients].find(x => x !== c && x.id === m.resume && !x.audioOf);
+        if(old&&old.account!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Cannot resume another account’s unit.'});
         if (old) { old.replaced = true; old.close(); }
         c.id = m.resume;
       }
       c.mission = code; c.role = mis.kind === 'comms' ? 'unit' : m.role === 'escort' ? 'escort' : 'rider';
       c.callsign = String(m.callsign || 'UNKNOWN').toUpperCase().slice(0, 24);
+      const accountUser=accounts.session(c.authRequest).user;
+      if(c.role==='rider'&&(!accountUser.riderName||!accountUser.weightKg)){c.mission=null;return c.send({t:'error',code:'RIDER_DETAILS',msg:'Complete rider name and weight in your account first.'});}
+      c.riderName=c.role==='rider'?accountUser.riderName:'';c.weightKg=c.role==='rider'?accountUser.weightKg:null;
       c.color = m.color || colorFor(mis, c.callsign);
       c.send({ t: 'joined', id: c.id, mission: mis, color: c.color });
       broadcastRoster(code);

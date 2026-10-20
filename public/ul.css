@@ -200,3 +200,38 @@ body.light .hw-panel{background:#d9dde0;color:#222}body.light .hw-panel label{co
 #dlgSet>div{min-width:0}#setBody{min-width:0;max-width:100%}#dlgSet select{min-width:0;max-width:100%}
 .hw-panel{min-width:0;max-width:100%}.hw-panel h3{overflow-wrap:anywhere}.hw-panel button{max-width:100%;white-space:normal}
 @media(max-width:760px){#setBody .srow{flex-wrap:wrap}#setBody .srow select{width:100%}#dlgSet>div{padding:14px!important}}
+
+/* v1.12 account access and weather. Existing tactical theme retained. */
+.account-dialog{width:min(510px,calc(100vw - 24px));max-height:90dvh;padding:0;border:1px solid var(--line2);background:var(--bg2);color:var(--fg);overflow:auto}
+.account-dialog::backdrop{background:rgba(0,5,9,.82)}
+.account-content{padding:24px;display:flex;flex-direction:column;gap:12px;font-size:14px;line-height:1.5}
+.account-content h2{margin:0;font-size:22px;letter-spacing:.12em}.account-kicker{color:var(--accent,#00e5ff);font-size:12px;letter-spacing:.2em}
+.account-content label{display:block;font-size:13px;letter-spacing:.1em}.account-content input{width:100%;min-height:44px;font-size:16px;margin-top:4px;box-sizing:border-box}
+.account-content p{margin:0}.account-note{color:var(--dim);font-size:14px;line-height:1.6}.account-actions{display:flex;flex-wrap:wrap;gap:8px}.account-actions button{flex:1;min-width:140px;min-height:44px;font-size:13px}
+#accountMessage,#acErr{color:#ffd08a;overflow-wrap:anywhere}.account-content [hidden]{display:none!important}.account-content #accountRider{display:grid;gap:8px}.account-content #accountRider[hidden]{display:none}
+#accountBar{position:fixed;bottom:8px;left:8px;z-index:900;display:flex;gap:6px;align-items:center;max-width:calc(100vw - 16px);padding:4px 8px;background:#071319;border:1px solid var(--line);font-size:10px}
+#accountBar button{font-size:10px;padding:5px 8px;min-height:32px}#accountBar span{max-width:180px;overflow-wrap:anywhere}
+#weatherWidget{position:absolute;left:12px;top:240px;z-index:600;width:min(310px,calc(100% - 24px));border:1px solid var(--line2);background:rgba(4,17,22,.96);color:var(--fg);font-size:13px;line-height:1.5}
+#weatherWidget header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}#weatherWidget header strong{flex:1;font-size:12px;letter-spacing:.12em}#weatherWidget button{min-height:36px;min-width:36px;padding:4px 8px;font-size:12px}
+.weather-body{padding:12px;max-height:35dvh;overflow:auto}.weather-body p{margin:0 0 8px}.weather-now{font-size:22px;font-weight:bold}.weather-meta{color:var(--dim);font-size:12px}.weather-hour{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}.weather-warn{color:#ffd08a}
+#weatherWidget a{color:#8deaff}#weatherWidget.is-min .weather-body{display:none}.wind-components{font-size:12px;line-height:1.6}.wind-components span{display:block}.wind-components .dominant{font-weight:bold}
+.account-content :focus-visible,#weatherWidget :focus-visible{outline:2px solid #00e5ff;outline-offset:3px}
+@media(max-width:760px){#accountBar{bottom:60px;font-size:9px;max-width:calc(100vw - 16px)}#accountBar span{max-width:140px}#weatherWidget{top:8px;left:8px;width:220px}body:has(#app) #accountBar{position:relative;bottom:auto;left:auto;margin:4px 14px;width:fit-content}.account-content{padding:18px}}
+/* Docked forecast: expands in normal console flow instead of covering map controls. */
+#shell>#weatherWidget{position:relative;inset:auto;width:auto;flex-shrink:0;z-index:650}
+#shell>#weatherWidget header{padding:4px 12px}#shell>#weatherWidget .weather-body{display:flex;gap:24px;align-items:flex-start;max-height:190px}
+#shell>#weatherWidget.is-min .weather-body{display:none}#shell>#weatherWidget .weather-body>p{min-width:120px}#shell>#weatherWidget .weather-hours{min-width:280px}
+#weatherWidget.weather-planning{top:auto;bottom:70px;left:auto;right:16px}
+@media(max-width:760px){#shell>#weatherWidget .weather-body{display:block;max-height:28dvh}#weatherWidget.weather-planning{bottom:72px;right:12px;width:220px}#shell>#weatherWidget header{min-height:40px}}
+#shell>#weatherWidget .weather-body{display:grid;grid-template-columns:190px 210px 220px minmax(300px,1fr);gap:8px 24px;max-height:210px;font-size:14px}
+#shell>#weatherWidget .weather-body>p{min-width:0}#shell>#weatherWidget .weather-credit{grid-column:1/-1;font-size:12px;margin:0}
+#shell>#weatherWidget .weather-hours{display:grid;grid-template-columns:repeat(7,minmax(48px,1fr));gap:8px;min-width:0}
+#shell>#weatherWidget .weather-hour{display:flex;flex-direction:column;gap:12px;border:0;font-size:12px}
+#shell>#weatherWidget .weather-now{font-size:22px;display:block;margin-top:8px}
+@media(max-width:1100px){#shell>#weatherWidget .weather-body{grid-template-columns:1fr 1fr;max-height:240px}}
+@media(max-width:760px){#shell>#weatherWidget .weather-body{display:block;max-height:28dvh}#shell>#weatherWidget .weather-hours{display:block}#shell>#weatherWidget .weather-hour{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-bottom:1px solid var(--line)}#shell>#weatherWidget .weather-body>p{margin-bottom:12px}}
+
+/* Account controls occupy their own strip; never float over power/PTT controls. */
+#accountBar,#accountOpsBar{position:relative;inset:auto;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 12px;max-width:none;flex-shrink:0;background:#071319;border:0;border-bottom:1px solid var(--line);font-size:11px;z-index:auto}
+#profPanel>#accountBar{border-top:1px solid var(--line);border-bottom:0}#accountBar button,#accountOpsBar button{min-height:32px;font-size:10px;padding:6px 8px}#accountBar span,#accountOpsBar span{max-width:none;overflow-wrap:anywhere}
+@media(max-width:760px){body:has(#app) #accountBar{position:relative;inset:auto;margin:0;width:auto}#accountBar,#accountOpsBar{font-size:10px;padding:4px 8px;gap:4px}}

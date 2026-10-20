@@ -60,10 +60,19 @@
   };
 
   /* ------------------------------------------------------- persistence */
-  const KEY = 'ulProfiles';
+  const KEY = UL.Account.key();
   let profiles = [];
   try { profiles = JSON.parse(localStorage[KEY] || '[]'); } catch (e) { profiles = []; }
-  const persist = () => { try { localStorage[KEY] = JSON.stringify(profiles); return true; } catch (e) { UL.toast('STORAGE FULL — export your profiles', 'bad'); return false; } };
+  const persist = () => { try { UL.Account.save(profiles); return true; } catch (e) { UL.toast('STORAGE FULL — export your profiles', 'bad'); return false; } };
+  const legacyButton=document.createElement('button');legacyButton.className='ghost';legacyButton.textContent='IMPORT PROFILES FROM THIS DEVICE';legacyButton.style.cssText='width:100%;margin:8px 0;font-size:10px';
+  $('pNew').insertAdjacentElement('afterend',legacyButton);
+  legacyButton.onclick=()=>{
+    let old=[];try{old=JSON.parse(localStorage.ulProfiles||'[]');}catch(e){}
+    if(!Array.isArray(old)||!old.length)return UL.toast('NO LEGACY DEVICE PROFILES FOUND','warn');
+    if(!confirm('Import '+old.length+' device-only profiles into '+UL.Account.user.callsign+'? Only import profiles that belong to you. Originals will be kept.'))return;
+    const ids=new Set(profiles.map(p=>p.id));for(const p of old)if(p&&p.id&&!ids.has(p.id)){profiles.push(p);ids.add(p.id);}
+    persist();renderList();renderPins();UL.toast('IMPORTED LOCALLY · ACCOUNT SYNC PENDING','ok');
+  };
   const code6 = () => Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join('');
   const uid = () => Math.random().toString(36).slice(2, 10);
   const pad = n => String(n).padStart(2, '0');
@@ -684,7 +693,7 @@
     const i = profiles.findIndex(p => p.id === cur.id);
     profiles[i] = JSON.parse(JSON.stringify(cur));
     if (!persist()) return false;
-    origJson = JSON.stringify(cur); dirty(); renderList(); fx.save(); UL.toast('PROFILE SAVED', 'ok');
+    origJson = JSON.stringify(cur); dirty(); renderList(); fx.save(); UL.toast('PROFILE SAVED LOCALLY · ACCOUNT SYNC PENDING', 'ok');
     return true;
   }
   $('dSave').onclick = save;
@@ -697,9 +706,11 @@
   $('impFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
-      const p = JSON.parse(await f.text()); if (!p.code || !p.name) throw new Error('not a profile');
-      p.id = uid(); if (profiles.some(x => x.code === p.code)) p.code = code6();
-      profiles.push(p); persist(); renderList(); fx.success(); UL.toast('PROFILE IMPORTED', 'ok');
+      const parsed=JSON.parse(await f.text()), incoming=Array.isArray(parsed)?parsed:[parsed];
+      if(!incoming.length||incoming.some(p=>!p||typeof p!=='object'||!p.code||!p.name))throw new Error('not a valid profile or profile collection');
+      if(profiles.length+incoming.length>100)throw new Error('maximum 100 profiles per account');
+      for(const p of incoming){p.id=uid();while(profiles.some(x=>x.code===p.code))p.code=code6();profiles.push(p);}
+      persist(); renderList(); fx.success(); UL.toast('PROFILES IMPORTED LOCALLY · ACCOUNT SYNC PENDING', 'ok');
     } catch (err) { fx.error(); UL.toast('IMPORT FAILED: ' + err.message, 'bad'); }
     e.target.value = '';
   };
@@ -730,7 +741,7 @@
       <li><b>Import the GPX</b> route, then press <b>✚ ADD CHECKPOINT</b> on the map and click on the route to cut it into sectors. Drag the dots to move them, click a dot to give it a designation.</li>
       <li>With <b>◎ SELECT SECTOR</b>, click a sector: the map zooms onto it and its gradient/elevation card opens, where you can write notes for the team.</li>
       <li><b>Training profiles:</b> after the GPX import ULTRALINK shows whether the route is <b>A → B</b> or a loop <b>A → A</b>. For a loop, tick <b>THIS TRAINING INVOLVES LAPS</b>, set the number of laps and a target time per lap. Sector times and targets are then kept lap by lap.</li>
-      <li>Add rider codenames, pick a <b>★ lead rider</b>, press <b>SAVE</b>. Profiles stay on this device; use EXPORT to back them up.</li>
+      <li>Add rider codenames, pick a <b>★ lead rider</b>, press <b>SAVE</b>. Profiles sync to your account when online; check ACCOUNT SYNCED before changing devices. Use EXPORT for a separate backup.</li>
       <li>When ready, press <b>▶ ENTER PROFILE</b>. Riders join with the code; the clock starts by itself at the departure time.</li></ol>
       <button class="primary" style="margin-top:6px" onclick="this.closest('dialog').close()">GOT IT</button></div>`;
     $('dlgHelp').showModal(); fx.open();

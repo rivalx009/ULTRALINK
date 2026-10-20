@@ -9,6 +9,14 @@
   const norm180 = a => ((a % 360) + 540) % 360 - 180;
   const norm360 = a => ((a % 360) + 360) % 360;
 
+  // Strength proxy for ambient wind components; NOT a claim of measured drag.
+  function windComponents(head,cross){
+    const h=Math.max(0,head),c=Math.abs(cross),max=Math.max(h,c);
+    const color=v=>v<.3?'#8da8b2':v>=max-.05?'#ff4d6d':v>=3?'#ffb000':'#ffd36b';
+    return{head:{label:Math.abs(head)<.3?'ALONG WIND ≈ 0':head<0?'TAILWIND':'HEADWIND',color:head<-.3?'#7cff5a':color(h),dominant:h>=.3&&h>=c-.05},cross:{color:color(c),dominant:c>=.3&&c>=h-.05}};
+  }
+  global.UL=global.UL||{};global.UL.windComponents=windComponents;
+
   class WindField extends EventTarget {
     constructor() {
       super();
@@ -16,11 +24,11 @@
       this.manual = null;         // {speed, dir, gust}  (m/s at rider height, direction FROM)
       this.factor = 0.65;         // 10 m model wind -> ~rider height (~1.2 m) estimate
       this.status = 'idle';       // idle | ok | error
-      this.last = 0; this.error = '';
+      this.last = 0; this.error = ''; this.requestSeq=0; this.loading=false; this.retryAt=0;
     }
     /** sample the route (~every 8 km, max 12 points) in one request */
     async loadRoute(route, force) {
-      if (!route || !route.points.length) return;
+      if (!route || !route.points.length || this.loading || (!force&&Date.now()<this.retryAt)) return;
       if (!force && Date.now() - this.last < 600000 && this.samples.length) return;
       const P = route.points, n = Math.max(2, Math.min(12, Math.round(route.distance / 8000) + 1));
       const pts = Array.from({ length: n }, (_, i) => P[Math.min(P.length - 1, Math.round(i * (P.length - 1) / (n - 1)))]);
@@ -30,13 +38,17 @@
       const lat = pts.map(p => p.lat.toFixed(3)).join(','), lon = pts.map(p => p.lon.toFixed(3)).join(',');
       const u = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
         '&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=auto';
+      const my=++this.requestSeq;this.loading=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
       try {
-        const r = await fetch(u, { cache: 'no-store' });
+        const r = await fetch(u, { cache: 'no-store',signal:controller.signal });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         let j = await r.json(); if (!Array.isArray(j)) j = [j];
+        if(my!==this.requestSeq)return;
+        if(j.some(o=>!o.current||!Number.isFinite(o.current.wind_speed_10m)||!Number.isFinite(o.current.wind_direction_10m)))throw Error('Incomplete wind data');
         this.samples = j.map((o, i) => ({ lat: pts[i].lat, lon: pts[i].lon, speed: o.current.wind_speed_10m, dir: o.current.wind_direction_10m, gust: o.current.wind_gusts_10m }));
         this.status = 'ok'; this.last = Date.now(); this.error = '';
-      } catch (e) { this.status = 'error'; this.error = e.message; }
+      } catch (e) { if(my!==this.requestSeq)return;this.status = 'error'; this.error = e.message;this.retryAt=Date.now()+60000; }
+      finally {clearTimeout(timeout);if(my===this.requestSeq)this.loading=false;}
       this.dispatchEvent(new CustomEvent('update'));
     }
     setManual(speed, dir, gust) { this.manual = speed == null ? null : { speed, dir, gust: gust == null ? speed * 1.3 : gust }; this.dispatchEvent(new CustomEvent('update')); }
@@ -54,7 +66,7 @@
       }
       const u = su / sw, v = sv / sw, sp10 = Math.hypot(u, v);
       const dir = norm360(deg(Math.atan2(u, v)) + 180);
-      return { speed: sp10 * this.factor, speed10: sp10, gust: (sg / sw) * this.factor, dir, src: 'MODEL' };
+      return { speed: sp10 * this.factor, speed10: sp10, gust: (sg / sw) * this.factor, dir, src: this.status==='error'||Date.now()-this.last>900000?'MODEL · STALE':'MODEL' };
     }
   }
 

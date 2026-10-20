@@ -1,3 +1,7 @@
+# ULTRALINK v1.12.0
+
+**Start with RELEASE-v1.12.md.** Accounts require durable server storage before deployment. The sections below are retained historical setup notes; v1.12 changes and limitations take precedence.
+
 ## v1.11.2 — non-invasive Escort startup
 
 Escort boot no longer opens/closes a temporary default microphone. Microphone capture still starts when a mission is entered, or when explicitly requested through Audio settings. Bluetooth pairing remains managed by the operating system; this application does not pair or unpair devices.

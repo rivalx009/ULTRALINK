@@ -83,4 +83,4 @@
   <div class="foot"><button class="ghost" id="latch" title="Tap once to open the line, tap again to close it">◎ HANDS-FREE: OFF</button><button class="ghost danger" id="leave">LEAVE CHANNEL</button></div>
 </div>
 
-<script src="ul-fx.js"></script><script src="ul-ui.js"></script><script src="comms.js"></script></body></html>
+<script src="ul-fx.js"></script><script src="ul-ui.js"></script><script src="ul-account.js"></script><script>UL.Account.launch("comms",["comms.js"]).catch(e=>{document.body.textContent="Cannot start ULTRALINK: "+e.message;});</script></body></html>

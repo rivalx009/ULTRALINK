@@ -1,0 +1,23 @@
+ULTRALINK v1.12.0
+================
+Read RELEASE-v1.12.md BEFORE deploying.
+
+This is source code, not an already deployed update.
+
+RENDER STORAGE IS REQUIRED FOR ACCOUNTS:
+- Persistent disk mounted at /var/data
+- Environment: UL_DATA_DIR=/var/data
+- Same HTTPS server URL on all devices
+- One server instance/process
+- No hosting upgrade or purchase has been performed for you.
+- The original free-plan render.yaml is retained, not silently upgraded.
+
+After signing in on your original laptop:
+1. Escort planning -> IMPORT PROFILES FROM THIS DEVICE
+2. Confirm that the device profiles belong to your account
+3. Wait for ACCOUNT SYNCED
+4. Sign in with the same callsign/password on the other device
+
+Browser/PWA is the tested target. Native installers were not rebuilt;
+legacy Android background-radio sidecars need an authenticated native update.
+Use the browser/PWA for this release's tested foreground radio behavior.
