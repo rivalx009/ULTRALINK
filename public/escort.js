@@ -853,7 +853,10 @@
   function initVoice() {
     let mode = 'auto'; try { mode = localStorage.ulVoice === 'relay' ? 'relay' : 'auto'; } catch (e) {}
     voice = new UL.VoiceNet(link, { mode }); hardware.attachVoice(voice);
-    voice.selfId = me;
+    voice.selfId=me;
+    voice.on('txfault',reason=>{txEnd();log('RADIO',reason,'#ff4d6d');UL.toast(reason,'bad',5000);});
+    voice.on('health',()=>voiceTag());
+    voice.on('txstate',()=>voiceTag());
     voice.on('micstate', s => { if (!s.ready) { log('SYS', s.reason + ' · PTT CLOSED', '#ff4d6d'); UL.toast('MICROPHONE UNAVAILABLE — CHECK AUDIO SETTINGS', 'bad', 5000); } });
     voice.on('blocked', () => $('audioPrompt').classList.add('show'));
     voice.on('unblocked', () => $('audioPrompt').classList.remove('show'));
@@ -880,7 +883,9 @@
     if (!voice || !$('vq')) return;
     const s = voice.summary();
     $('vq').textContent = !s.mic ? 'MIC OFF' : s.mode === 'relay' ? 'VOICE RELAY' : 'VOICE P2P ' + s.p2p + '/' + s.total;
-    $('vq').className = 'tag ' + (!s.mic ? 'bad' : s.total && s.p2p < s.total ? '' : 'ok');
+    $('vq').className='tag '+(!s.mic||s.fault?'bad':s.warning?'':s.total&&s.p2p<s.total?'':'ok');
+    if($('radioStatus')){const text=s.status+(s.keyed?' · RECEIPTS ARE SOFTWARE ONLY':'');if($('radioStatus').textContent!==text)$('radioStatus').textContent=text;$('radioStatus').style.borderColor=s.fault||!s.mic?'var(--bad)':s.warning?'var(--warn)':'var(--line2)';}
+    if(s.keyed&&pttOpen)$('txbanner').textContent='◉ AUDIO SENDING · MEDIA RECEIVED '+s.received+'/'+s.targets;
   }
   function assignKeys() {
     keymap = new Map(); const slots = cfg.v.keys.units;
@@ -910,8 +915,8 @@
     if (emergencyMode) return;
     if (pttOpen || !voice) return;
     pttOpen = true; fx.pttOpen(); $('pttBtn').classList.add('on'); $('map').classList.add('tx');
-    voice.transmit(targets, 140);        // sends the PTT banner now, opens the mic just after the key beep (so the beep is not transmitted)
-    $('txbanner').style.display = 'block'; $('txbanner').textContent = '◉ TX → ' + label;
+    const accepted=voice.transmit(targets,140);if(!accepted){txEnd();return;}        // prepares healthy audio, then announces PTT after the key-beep delay
+    $('txbanner').style.display = 'block'; $('txbanner').textContent='◉ PREPARING → '+label;
     $('txbanner').style.borderColor = '#ffb000'; $('txbanner').style.color = '#ffb000';
     log('TX', '→ ' + label, '#ffb000');
   }

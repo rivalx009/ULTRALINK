@@ -1,4 +1,4 @@
-const C='ultralink-v22';
+const C='ultralink-v23';
 const A=['./','index.html','comms.js','sim.html','ul.css','ul.js','ul-account.js','ul-weather.js','ul-fx.js','radio-open.mp3','off-course-alert.mp3','rider-down-alert.mp3','mechanical-alert.mp3','emergency-yes.mp3','emergency-no.mp3','emergency-understood.mp3','ul-ui.js','ul-sectors.js','ul-settings.js','ul-boot.js','ul-wind.js','ul-map.js','ul-power.js','wordmark.svg','icon-maskable-512.png','rider.js','escort.js','escort-plan.js','leaflet.js','leaflet.css','manifest.webmanifest','icon.svg','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(A).catch(()=>{})))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))));self.clients.claim()});

@@ -1,0 +1,75 @@
+ULTRALINK v1.12.2 — RADIO RELIABILITY MAINTENANCE UPDATE
+=====================================================
+Apply to an existing v1.12.1 Neon/PostgreSQL installation.
+This is a small source-code update, NOT a complete standalone installation.
+Keep the existing folders, audio assets and Neon configuration.
+
+WHAT CHANGED
+1. Physical PTT now explicitly resumes the browser audio processor, even when
+   its keyboard event is consumed by the hardware-button handler. A closed
+   audio context is rebuilt. An existing but suspended capture graph is not
+   treated as healthy simply because its nodes still exist.
+2. PTT START is announced only after a live microphone and running audio
+   processor are ready. Releasing while preparation is pending cancels it.
+3. Direct WebRTC track attachment is confirmed only after replaceTrack succeeds.
+   Failed/timed-out attachment and stalled direct audio can fall back to the
+   relay. Outgoing per-peer tracks are disabled immediately on release, even
+   when an asynchronous attachment is still pending.
+4. Ended, disabled or muted microphone tracks are not reported as ready.
+   Microphone interruptions close PTT. Bounded recovery uses the same selected
+   input; it does not silently select the laptop microphone or reopen PTT.
+5. During transmission, watchdogs monitor capture callbacks, mic signal and
+   outgoing RTP progress. Missing capture is rebuilt or fails closed. Silence
+   produces a check-input warning, not a claim that the hardware has failed.
+6. Receiver software reports whether media packets are arriving, or playback
+   is blocked/monitor-muted. The escort status shows MEDIA RECEIVED x/y during
+   PTT. Old, wrong-target and cross-mission receipts are rejected by the server.
+7. Offline PTT/signalling/audio is not queued for later surprise playback.
+   Congested WebSocket audio is dropped instead of building a stale backlog.
+   Missing application heartbeats trigger reconnection and close local PTT.
+8. Settings > Audio adds REPAIR RADIO and EXPORT RADIO DIAGNOSTICS.
+   Repair closes PTT and rebuilds the selected input/peer paths. Diagnostics
+   contain states, counters and recent faults, not audio recordings, passwords,
+   session cookies or database connection strings. Review before sharing.
+
+IMPORTANT: WHAT THE STATUS DOES NOT PROVE
+A key-in tone means a control message arrived, not that speech arrived.
+MEDIA RECEIVED counts fresh software media-flow reports. It does NOT confirm
+that a person heard the words, that a headset is correctly routed/turned up,
+or that silent incoming samples contain speech. Obtain a spoken read-back.
+Older clients do not provide the new receipts: update/reload ALL devices.
+Relay fallback cannot overcome a failed internet connection or a dead mic.
+This update does not certify the system as emergency/safety equipment.
+
+INSTALL ON GITHUB / RENDER
+1. Back up/export saved race profiles. Keep your existing v1.12.1 repository.
+2. Extract this update ZIP. Copy its CONTENTS into that repository's root,
+   replacing the same-named files. Merge public/ with public/; do not delete
+   the existing folder. Do not upload the ZIP itself as an application file.
+3. Commit/push the changed files to the branch Render deploys from. Keep the
+   existing Render DATABASE_URL and other settings. There are no new packages,
+   database migrations, paid services or required environment variables.
+4. Wait for Render's deployment to finish. The existing Docker/npm install
+   process still applies. Local installs: Node 22+, npm ci --omit=dev
+   --ignore-scripts, npm run check, npm start.
+5. Close all old ULTRALINK tabs/windows on escort AND rider devices, reopen the
+   deployed site online and reload it. Browser cache version is ultralink-v23.
+   If an installed PWA remains stale, close and reopen it, then reload online.
+6. Run ROAD-TEST-v1.12.2.txt while stationary before relying on the update.
+
+UNCHANGED / LIMITATIONS
+- Neon accounts, password/session handling, saved profiles, rider details,
+  weather, wind arrows, emergency text-to-voice and alert sounds are preserved.
+- Account stay-signed-in policy is unchanged; this is a radio maintenance patch.
+- Actual Bluetooth pairing, OS audio drivers, device power saving, browser
+  background suspension and cellular coverage remain outside this patch.
+- Use the current browser/PWA foreground radio path for validation. No Windows
+  installer or Android APK was rebuilt. Legacy native Android radio sidecars
+  still lack the account-session integration needed by the account-gated relay;
+  native screen-off/background radio is NOT repaired or verified here.
+- The exact cause of the earlier road incident is not provable without logs
+  from the affected devices. These changes fix identified/reproduced software
+  failure modes, not a confirmed hardware diagnosis.
+
+See VALIDATION-v1.12.2.txt for test scope and results.
+For Neon setup, retain NEON-SETUP-v1.12.1.txt from your existing installation.

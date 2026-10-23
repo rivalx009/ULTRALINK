@@ -1,0 +1,51 @@
+ULTRALINK v1.12.2 — STATIONARY CHECKS, THEN CONTROLLED FIELD TEST
+==============================================================
+Do not operate the laptop while driving. Have a separate operator perform
+these checks. Carry an independent communication method. Stop safely if
+communications fail; do not rely on this application as the only emergency link.
+
+PREPARATION
+1. Deploy both server and public/ changes, then reload every client online.
+2. On the actual Windows laptop, pair/connect the headset and PTT first.
+   Verify the microphone in Windows recording settings. Confirm the riders'
+   actual headphones/speaker outputs and volumes separately.
+3. Open ULTRALINK, join the mission on the escort and rider devices. Keep the
+   browser visible/focused for physical PTT. In Escort > Settings > Audio,
+   select the intended microphone and use TEST MIC LEVEL. Stop the mic test.
+   Confirm the physical button using TEST BUTTON — NO TX.
+
+TWO-PERSON AUDIO CHECK
+4. Hold PTT for about 5–10 seconds and speak a distinctive test phrase.
+   Confirm MEDIA RECEIVED reaches the expected fresh receiver count. The
+   initial count can be zero while reports arrive. Have EACH rider repeat the
+   phrase back; a count alone is not proof of intelligibility or human hearing.
+5. Test ALL units and each individual target. Check non-targets do not receive
+   speech. Repeat in the reverse direction with the rider transmitting.
+6. Release PTT: confirm speech stops. Repeat short transmissions and longer
+   ones, then test again after a sustained idle period. Avoid a stuck-open mic.
+
+CONTROLLED INTERRUPTION CHECKS — WHILE STATIONARY
+7. Disconnect/reconnect the selected headset. PTT must close and readiness must
+   become false. After recovery, inspect the input selection and press PTT
+   again: transmission must NOT restart by itself.
+8. Temporarily interrupt the laptop network. PTT should close when loss is
+   detected, not replay old speech after reconnection. Rejoin/retry as needed.
+9. Move focus away from ULTRALINK while using physical PTT. Confirm transmission
+   stops; return to ULTRALINK and deliberately press again.
+10. In Settings > Audio, press REPAIR RADIO. PTT must remain closed. Recheck mic
+    level, then repeat the spoken read-back with the rider. If direct audio is
+    unreliable, also test the existing Relay only voice-path option.
+11. Test Emergency Frequency text-to-voice separately and verify the rider hears
+    the exact phrase. It still needs a working connection and rider playback.
+12. If a fault occurs, release PTT, note the time and status on both devices,
+    then EXPORT RADIO DIAGNOSTICS from Escort > Settings > Audio. Save a rider
+    screenshot/status as well. Record browser, OS, headset/PTT model, selected
+    input, connection type and whether the browser was backgrounded.
+
+FIELD ACCEPTANCE
+Only after stationary checks pass, perform a controlled route test with the
+actual devices, headsets, mobile network and expected session duration. Include
+coverage transitions and idle/repeated-transmission periods. A failed read-back
+is a failed communication check even if packets or key-in tones are present.
+This release passed software simulations; your actual hardware/route still
+requires acceptance testing. No absolute reliability guarantee is made.

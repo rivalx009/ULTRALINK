@@ -433,7 +433,10 @@
       return;
     }
     voice = new UL.VoiceNet(link, { mode: localStorage.ulVoice === 'relay' ? 'relay' : 'auto' });
-    voice.selfId = me;
+    voice.selfId=me;
+    voice.on('micstate',s=>{if(!s.ready)shut();});
+    link.on('close',()=>shut());
+    voice.on('txfault',reason=>{shut();$('ptt').firstChild.textContent='RADIO FAULT — CHECK INPUT';UL.toast(reason,'bad',5000);});
     voice.on('blocked', () => $('tapAudio').classList.add('show'));
     voice.on('unblocked', () => $('tapAudio').classList.remove('show'));
     $('tapAudio').onclick = () => { voice.audioCtx(); $('tapAudio').classList.remove('show'); };
@@ -442,13 +445,13 @@
     setInterval(() => {
       const s = voice.summary();
       $('vmode').textContent = !s.mic ? 'MIC OFF' : s.mode === 'relay' ? 'VOICE RELAY' : 'VOICE P2P ' + s.p2p + '/' + s.total;
-      $('vmode').className = 'tag ' + (!s.mic ? 'bad' : s.p2p < s.total ? '' : 'ok');
+      $('vmode').className='tag '+(!s.mic||s.fault?'bad':s.p2p<s.total?'':'ok');$('vmode').title=s.status;
     }, 1000);
   }
   const btn = $('ptt');
   let live = false;
-  /* voice.transmit() sends the PTT banner and opens the mic just after the key beep; release() closes both */
-  const open = () => { if (NATIVE_RADIO) return app('radioPtt', true); if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); app('setTalking', true); };
+  /* voice.transmit() prepares healthy audio before announcing PTT; release() cancels preparation and closes both */
+  const open = () => { if (NATIVE_RADIO) return app('radioPtt', true); if (live || !voice) return; live = true; fx.pttOpen(); if(!voice.transmit('all',140)){live=false;return;}btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate?.(30); app('setTalking', true); };
   const shut = () => { if (NATIVE_RADIO) return app('radioPtt', false); if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = 'PUSH TO TALK'; app('setTalking', false); };
   btn.addEventListener('pointerdown', e => { e.preventDefault(); try { btn.setPointerCapture(e.pointerId); } catch (x) {} open(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, shut));

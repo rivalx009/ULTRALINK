@@ -387,12 +387,16 @@ function handle(c, m) {
       break;
     }
     case 'ptt': {              // {state:'start'|'end', targets:[ids]|'all', relay:[ids]|'all' (units that get audio through the relay)}
-      if (!c.mission) return;
+      if(!c.mission||!['start','end'].includes(m.state))return;
+      if(m.targets!=='all'&&!Array.isArray(m.targets))return;
+      const txid=typeof m.txid==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(m.txid)?m.txid:null;
+      if(m.state==='end'&&txid&&c.radioTx?.txid&&txid!==c.radioTx.txid)return;
+      c.radioTx=m.state==='start'?{txid,targets:m.targets,at:Date.now()}:null;
       c.relay = m.state === 'start' ? relayList(m.relay) : null;
       const from = c.audioOf || c.id, owner = c.audioOf ? unitById(c.mission, c.audioOf) : c;
       const others = peers(c.mission, null).filter(p => p.id !== from);
       const list = m.targets === 'all' ? others : others.filter(p => (m.targets || []).includes(p.id));
-      const msg = { t: 'ptt', from, callsign: (owner && owner.callsign) || c.callsign, color: (owner && owner.color) || c.color, state: m.state };
+      const msg = { t: 'ptt', from, callsign: (owner && owner.callsign) || c.callsign, color: (owner && owner.color) || c.color, state: m.state, txid };
       list.forEach(p => deliver(p, msg));
       break;
     }
@@ -414,6 +418,14 @@ function handle(c, m) {
       c.mission = null; if (missions[code] && missions[code].kind === 'comms') missions[code].lastSeen = Date.now();
       broadcastRoster(code);
       break;
+    }
+    case 'voice.receipt': {
+      if(!c.mission||c.audioOf)return;
+      const dst=unitById(c.mission,m.to),tx=dst?.radioTx;
+      if(!tx?.txid||m.txid!==tx.txid||Date.now()-tx.at>65000||!(tx.targets==='all'||tx.targets.includes(c.id)))return;
+      if(!['flowing','noaudio','blocked','muted'].includes(m.state)||!['relay','p2p'].includes(m.via))return;
+      if(Date.now()-(c.receiptAt||0)<500)return;c.receiptAt=Date.now();
+      dst.send({t:'voice.receipt',from:c.id,txid:tx.txid,state:m.state,via:m.via,packets:Math.min(1000000,Math.max(0,Math.floor(Number(m.packets)||0)))});break;
     }
     case 'ptt.relay': c.relay = relayList(m.relay); break;
     case 'ping': c.send({ t: 'pong', ts: m.ts }); break;

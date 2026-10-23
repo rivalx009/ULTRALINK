@@ -1,0 +1,65 @@
+ULTRALINK v1.12.2 — VALIDATION RECORD
+====================================
+219 automated checks passed; no failed checks in the completed final runs.
+Counts below are distinct assertions, not repeated runs added together.
+
+57  Mission/telemetry/route/sector/alerts/PTT end-to-end regression checks
+32  Microphone selection and physical keyboard/HID PTT interface checks
+28  Emergency Frequency messaging/playback/security regression checks
+20  PostgreSQL account/session/profile API regression checks
+21  Account cross-device sync, rider details, wind/weather and responsive UI
+ 6  Profile conflict/offline retention/backup-import checks
+23  Radio fault-injection checks
+19  Real browser media feedback, relay fallback and repeated-PTT checks
+ 9  Server radio receipt validation/scoping/legacy compatibility checks
+ 4  Actual rider/COMMS controls: mic/link interruption closes visible PTT
+---
+219 total
+
+NEW RADIO TEST COVERAGE
+- Suspended AudioContext resumed by learned F8 hardware-style key event,
+  including capture-listener ordering; closed AudioContext rebuilt.
+- Actual encoded relay packets continue after context recovery.
+- Failed replaceTrack does not count as a successful attachment; relay enabled.
+- Pending/late attachment uses disabled clones after release (no stuck-open mic).
+- Live-muted and ended retained microphone tracks do not pretend to be ready.
+- Recovery preserves input choice and never opens PTT automatically.
+- Offline start, link loss and missing processor callbacks fail closed/rebuild.
+- Stalled outbound RTP and receiver no-media reports trigger relay fallback.
+- Fresh/old/blocked reports update status honestly for the current transmission.
+- Real Chromium relay and WebRTC audio/media receipts via the updated server.
+- Real peer track-attachment rejection recovers through relay packets.
+- Twelve additional short PTT cycles leave capture and transmit state closed.
+- Receiver monitor mute is visible and not counted as fresh usable media flow.
+- Receiver report identity supplied by server; wrong nonce/target/mission/state
+  rejected, rate limiting applied and post-release reports ignored.
+- Repair keeps PTT closed and uses the selected input; diagnostics omit secrets
+  and recorded audio. Local health checks have bounded parallel stats waits.
+
+METHOD / ENVIRONMENT
+Local Linux Chromium/Playwright, actual browser AudioContext/WebRTC/relay packet
+processing, synthetic microphone input and keyboard/HID events. The updated
+Node server ran against a local PostgreSQL database. Account and weather tests
+used controlled data; browser TTS/native speech callbacks were simulated where
+required. Desktop and phone-width layouts were checked; radio status placement
+was inspected visually. JavaScript syntax checks passed for all npm check
+entry points, including the shared radio engine and rider/COMMS scripts.
+
+A browser test fixture initially hit Chromium's local-network access checks;
+its page was changed to a genuinely served same-origin page. One parallel
+regression run hit an account-gated rider initialization timing race in the test
+harness; the rerun waited for rider initialization and passed. Neither issue was
+hidden by removing a product assertion. Repeated runs are not double-counted.
+
+NOT VERIFIED
+No actual Windows/Bluetooth headset or ESP32 PTT hardware, physical speaker
+output, intelligibility, extended road session, weak cellular network,
+background/locked phone, iOS/Safari, native APK/EXE rebuild or production Neon /
+Render deployment was tested here. Software media receipts cannot establish
+human hearing. No guarantee of road-use reliability or emergency fitness is
+made. Use ROAD-TEST-v1.12.2.txt for acceptance on your actual devices.
+
+RELEASE CHECKS
+The update contains changed source/docs only, preserving v1.12.1 paths. No test
+scripts/data, node_modules, recordings, native installers or database credentials
+are shipped. UPDATE-FILES-v1.12.2.sha256 lists the included file hashes.

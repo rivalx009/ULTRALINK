@@ -89,6 +89,9 @@
   function startVoice() {
     voice = new UL.VoiceNet(link, { mode: localStorage.ulVoice === 'relay' ? 'relay' : 'auto' });
     voice.selfId = me;
+    voice.on('micstate',s=>{if(!s.ready)shut();});
+    link.on('close',()=>shut());
+    voice.on('txfault',reason=>{shut();UL.toast(reason,'bad',5000);});
     voice.on('blocked', () => $('tapAudio').classList.add('show'));
     voice.on('unblocked', () => $('tapAudio').classList.remove('show'));
     voice.on('state', () => renderUnits());
@@ -104,7 +107,7 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { link.kick(); voice.recover(); try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {} } });
   }
   const btn = $('ptt'); let live = false, latch = false;
-  const open = () => { if (live || !voice) return; live = true; fx.pttOpen(); voice.transmit('all', 140); btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate && navigator.vibrate(30); app('setTalking', true); renderUnits(); };
+  const open = () => { if (live || !voice) return; live = true; fx.pttOpen(); if(!voice.transmit('all',140)){live=false;return;}btn.classList.add('live'); btn.firstChild.textContent = '◉ TRANSMITTING'; navigator.vibrate && navigator.vibrate(30); app('setTalking', true); renderUnits(); };
   const shut = () => { if (!live) return; live = false; voice.release(); fx.pttClose(); btn.classList.remove('live'); btn.firstChild.textContent = latch ? 'TAP TO TALK' : 'PUSH TO TALK'; app('setTalking', false); renderUnits(); };
   btn.addEventListener('pointerdown', e => { e.preventDefault(); if (latch) { live ? shut() : open(); return; } try { btn.setPointerCapture(e.pointerId); } catch (x) {} open(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, () => { if (!latch) shut(); }));

@@ -1,4 +1,6 @@
-# ULTRALINK v1.12.1
+# ULTRALINK v1.12.2
+
+**Radio maintenance patch:** read `RELEASE-v1.12.2.txt`, `VALIDATION-v1.12.2.txt` and `ROAD-TEST-v1.12.2.txt`. Apply the small update over v1.12.1; do not delete existing assets. Neon configuration is unchanged. Update and reload every client. Media-flow receipts are software reports, not proof a person heard speech. Native installers/background radio are not rebuilt or newly certified.
 
 **Start with NEON-SETUP-v1.12.1.txt and RELEASE-v1.12.md.** Accounts now require a private DATABASE_URL pointing to PostgreSQL, not a Render disk. Node 22+ and `npm ci --omit=dev --ignore-scripts` are required for local use; Docker installs dependencies automatically.
 

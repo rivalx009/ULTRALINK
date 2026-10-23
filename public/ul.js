@@ -130,7 +130,7 @@
         this.emit('open');
         this.queue.splice(0).forEach(m => this.send(m));
         clearInterval(this._hb);
-        this._hb = setInterval(() => this.send({ t: 'ping', ts: Date.now() }), 5000);
+        this._hb = setInterval(() => {if(Date.now()-this.lastPong>15000)return this.kick();this.send({t:'ping',ts:Date.now()});},5000);
       };
       ws.onclose = () => {
         if (ws !== this.ws) return;            // an old socket replaced by kick()
@@ -156,10 +156,10 @@
       if (st === 1 && Date.now() - (this.lastPong || 0) < 12000) return;
       if (st === 0) return;
       const old = this.ws; this.ws = null; try { old && old.close(); } catch (e) {}
-      clearInterval(this._hb); this.retry = 0; this.connect(this.url);
+      clearInterval(this._hb);this.emit('close');this.retry=0;this.connect(this.url);
     }
-    send(m) { this.ready ? this.ws.send(JSON.stringify(m)) : this.queue.push(m); }
-    sendBinary(b) { if (this.ready) this.ws.send(b); }
+    send(m) {if(this.ready){this.ws.send(JSON.stringify(m));return true;}if(!['ptt','ptt.relay','signal','voice.receipt'].includes(m.t))this.queue.push(m);return false;}
+    sendBinary(b) {if(!this.ready||this.ws.bufferedAmount>262144)return false;this.ws.send(b);return true;}
     emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
     on(type, fn) { this.addEventListener(type, e => fn(e.detail)); return this; }
   }
@@ -192,21 +192,126 @@
       this.keyed = false; this.targets = 'all'; this.relayTargets = null; this.muted = new Set();
       this.sid = Math.random().toString(36).slice(2, 10);
       this.ice = ICE; this.ctx = null; this.rx = new Map(); this.stats = { relayTx: 0, relayRx: 0 };
-      this.blocked = new Set();
+      this.blocked=new Set();this.receipts=new Map();this.inbound=new Map();this.radioLog=[];this.warning='';this.lastFault='';this._txGeneration=0;this._recoverAttempts=0;this._requested=false;this.level=0;
       link.on('signal', m => this.onSignal(m));
-      link.on('binary', b => this.onRelayAudio(b));
+      link.on('binary',b=>this.onRelayAudio(b));link.on('ptt',m=>this.receivePtt(m));link.on('voice.receipt',m=>this.receiveReceipt(m));link.on('close',()=>{this.release();this.setWarning('RADIO LINK LOST — PTT CLOSED');});
       try { fetch('ice', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { if (j && j.iceServers && j.iceServers.length) this.ice = j; }).catch(() => {}); } catch (e) {}
       const unlock = () => { this.audioCtx(); this.blocked.forEach(a => a.play().then(() => { this.blocked.delete(a); if (!this.blocked.size) this.emit('unblocked'); }).catch(() => {})); };
       ['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, unlock, { capture: true, passive: true }));
-      this._gate = setInterval(() => this.keyed && this.applyGate(), 1000);
+      this._gate=setInterval(()=>this.healthTick().catch(()=>this.setWarning('RADIO HEALTH CHECK FAILED — TAP REPAIR RADIO')),750);
     }
     emit(t, d) { this.dispatchEvent(new CustomEvent(t, { detail: d })); }
     on(t, fn) { this.addEventListener(t, e => fn(e.detail)); return this; }
     audioCtx() {
-      const AC = global.AudioContext || global.webkitAudioContext; if (!AC) return null;
-      if (!this.ctx) this.ctx = new AC();
-      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
-      return this.ctx;
+      const AC=global.AudioContext||global.webkitAudioContext;if(!AC)return null;
+      if(this.ctx?.state==='closed'){
+        this.clearMicCapture();this.rx.forEach(s=>{try{s.g.disconnect();}catch{}});this.rx.clear();this.ctx=null;this._resuming=null;
+      }
+      if(!this.ctx){this.ctx=new AC();this.ctx.addEventListener('statechange',()=>{if(this.ctx.state==='running'&&!this.blocked.size){if(this.warning==='AUDIO PAUSED — TAP REPAIR RADIO')this.warning='';this.emit('unblocked');}this.emit('health',this.summary());});}
+      const c=this.ctx;
+      if(c.state!=='running'&&!this._resuming){
+        this._resuming=Promise.resolve(c.resume()).catch(()=>{this.setWarning('AUDIO PAUSED — TAP REPAIR RADIO');}).finally(()=>{this._resuming=null;});
+      }
+      return c;
+    }
+    logRadio(kind, detail) {
+      this.radioLog.push({time:new Date().toISOString(),kind,detail:String(detail).slice(0,180)});
+      if(this.radioLog.length>100)this.radioLog.shift();
+    }
+    micHealthy() { return !!(this.track && this.track.readyState==='live' && this.track.enabled && !this.track.muted); }
+    setWarning(message) { if(this.warning===message)return;this.warning=message;this.logRadio('warning',message);this.emit('health',this.summary()); }
+    txFault(reason) {
+      this.lastFault=reason;this.logRadio('tx-fault',reason);this.release();
+      this.emit('txfault',reason);this.emit('health',this.summary());
+    }
+    async ensureAudio() {
+      const c=this.audioCtx();if(!c)throw Error('AUDIO PROCESSING IS NOT AVAILABLE');
+      if(c.state!=='running')await Promise.race([this._resuming,new Promise((_,reject)=>setTimeout(()=>reject(Error('AUDIO PAUSED — TAP REPAIR RADIO')),1800))]);
+      if(c.state!=='running')throw Error('AUDIO PAUSED — TAP REPAIR RADIO');
+      return c;
+    }
+    scheduleRecovery() {
+      clearTimeout(this._recoverTimer);
+      if(this._recoverAttempts>=3)return;
+      const delay=[1000,3000,8000][this._recoverAttempts++];
+      this._recoverTimer=setTimeout(async()=>{
+        if(document.hidden||this.micHealthy())return;
+        const ok=await this.recover(true);if(!ok&&!this.micHealthy())this.scheduleRecovery();
+      },delay);
+    }
+    async repair() {
+      this.release();this.lastFault='';this.warning='';this.logRadio('repair','USER REQUESTED; PTT REMAINS CLOSED');
+      const audio=this.ensureAudio();audio.catch(()=>{});
+      for(const id of [...this.peers.keys()])this.dropPeer(id);
+      await this.selectMicrophone(this.inputDeviceId);await audio;if(!this.micHealthy())throw Error('SELECTED MICROPHONE STILL UNAVAILABLE');this.sync([...this.known]);
+      this.emit('health',this.summary());return this.micHealthy();
+    }
+    stopClone(p) { if(p.clone){p.clone.enabled=false;p.clone.stop();}p.clone=null;p.cloneSource=null; }
+    forceRelay(p,reason) {
+      if(this.peers.get(p.id)!==p||p.forceRelay)return;
+      p.forceRelay=true;if(p.clone)p.clone.enabled=false;
+      this.logRadio('relay-fallback',reason);this.setWarning('DIRECT AUDIO FAILED — USING RELAY');
+      this.applyGate();
+    }
+    async healthTick() {
+      if(this._healthBusy)return;this._healthBusy=true;
+      try{
+        const now=Date.now();
+        if(this.keyed){
+          if(!this.link.ready){this.txFault('RADIO LINK LOST');return;}
+          if(!this.micHealthy()){this.txFault('MICROPHONE INTERRUPTED — RELEASE AND RETRY');return;}
+          if(now-this._openedAt>60000){this.txFault('60-SECOND TRANSMIT LIMIT — RELEASE AND PRESS AGAIN');return;}
+          this.audioCtx();this.applyGate();
+          if(now-this._lastCapture>3500){this.txFault('NO AUDIO PROCESSING — TAP REPAIR RADIO');return;}
+          if(now-this._lastCapture>1400&&now-(this._graphRepairAt||0)>2500){this._graphRepairAt=now;this.clearMicCapture();this.setCapture(true);this.logRadio('capture-rebuild','NO PROCESSOR CALLBACKS');}
+          if(now-this._lastSignalAt>4000)this.setWarning('NO MIC SIGNAL — SPEAK / CHECK INPUT');
+          const txid=this.txid;
+          await Promise.all([...this.peers.values()].filter(p=>this.isTarget(p.id)&&this.p2pUp(p.id)&&p.sender?.getStats).map(async p=>{
+            try{
+              const reports=await Promise.race([p.sender.getStats(),new Promise((_,reject)=>setTimeout(()=>reject(Error('STATS TIMEOUT')),700))]);
+              if(!this.keyed||this.txid!==txid||this.peers.get(p.id)!==p)return;let count=0;
+              reports.forEach(r=>{if(r.type==='outbound-rtp'&&!r.isRemote)count+=Number(r.bytesSent||r.packetsSent||0);});
+              if(p.rtpCount===null||p.rtpCount===undefined){p.rtpCount=count;p.rtpAt=now;}
+              else if(count>p.rtpCount){p.rtpCount=count;p.rtpAt=now;}
+              else if(now-p.rtpAt>2500)this.forceRelay(p,'OUTBOUND RTP STALLED');
+            }catch{ /* unavailable stats never count as verified audio */ }
+          }));
+        }
+        await this.checkReceivers(now);this.emit('health',this.summary());
+      }finally{this._healthBusy=false;}
+    }
+    receivePtt(m) {
+      if(m.state==='start'&&m.from&&m.txid){
+        this.inbound.set(m.from,{txid:m.txid,since:Date.now(),last:0,relayPackets:0,oldRelay:0,oldRtp:null,rtpTotal:0});
+      }else if(m.state==='end')this.inbound.delete(m.from);
+    }
+    async checkReceivers(now) {
+      await Promise.all([...this.inbound].map(async([id,s])=>{
+        if(now-s.since>65000){this.inbound.delete(id);return;}
+        if(!this.link.ready||now-s.last<1000)return;
+        let packets=s.relayPackets-s.oldRelay;s.oldRelay=s.relayPackets;
+        let via=packets?'relay':'p2p',blocked=false,muted=this.muted.has(id);const p=this.peers.get(id);
+        if(!packets&&p?.rtc?.getStats){
+          try{const reports=await Promise.race([p.rtc.getStats(),new Promise((_,reject)=>setTimeout(()=>reject(Error('STATS TIMEOUT')),700))]);let total=0;
+            reports.forEach(r=>{if(r.type==='inbound-rtp'&&(r.kind==='audio'||r.mediaType==='audio'))total+=Number(r.packetsReceived||0);});
+            packets=s.oldRtp==null?0:Math.max(0,total-s.oldRtp);s.oldRtp=total;
+            blocked=!!(p.audio&&(this.blocked.has(p.audio)||p.audio.paused));
+          }catch{}
+        }
+        if(this.inbound.get(id)!==s||!this.link.ready)return;
+        if(via==='relay')blocked=this.ctx?.state!=='running';
+        const state=muted?'muted':blocked?'blocked':packets>0?'flowing':'noaudio';
+        s.last=now;this.link.send({t:'voice.receipt',to:id,txid:s.txid,state,via,packets:Math.min(1000000,packets)});
+      }));
+    }
+    receiveReceipt(m) {
+      if(!this.keyed||m.txid!==this.txid||!this.isTarget(m.from)||!this.known.has(m.from))return;
+      this.receipts.set(m.from,{state:m.state,via:m.via,at:Date.now(),packets:m.packets});
+      if(m.state==='noaudio'&&Date.now()-this._openedAt>3500){const p=this.peers.get(m.from);if(p&&this.p2pUp(p.id))this.forceRelay(p,'RECEIVER REPORTS NO MEDIA');}
+      this.emit('health',this.summary());
+    }
+    diagnostics() {
+      return{version:'1.12.2',at:new Date().toISOString(),context:this.ctx?.state||'not-started',mic:this.micHealthy(),trackState:this.track?.readyState||'none',trackMuted:!!this.track?.muted,mode:this.mode,keyed:this.keyed,stats:{...this.stats},status:this.summary().status,captureAgeMs:this._lastCapture?Date.now()-this._lastCapture:null,inputLevel:this.level,peers:[...this.peers.values()].map(p=>({id:p.id,connection:p.rtc.connectionState,relay:!!p.forceRelay,attached:!!p.sent})),events:this.radioLog.slice()};
     }
     inputConstraints(id) {
       return { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, ...(id ? {deviceId:{exact:id}} : {}) } };
@@ -217,55 +322,68 @@
       if (this._proc) this._proc.onaudioprocess = null;
       this._micSource = this._proc = this._micMute = null;
     }
-    installMic(stream, id) {
-      const old = this.stream; this.clearMicCapture();
-      this.stream = stream; this.track = stream.getAudioTracks()[0]; this.inputDeviceId = id; this.micError = null;
-      this.track.enabled = true;
-      const track = this.track;
-      track.addEventListener('ended', () => {
-        if (this.track !== track) return;
-        this.release(); this.emit('micstate',{ready:false,reason:'MICROPHONE DISCONNECTED',id:this.inputDeviceId});
-        if (document.visibilityState === 'visible') this.recover();
+    installMic(stream,id) {
+      const track=stream.getAudioTracks()[0];
+      if(!track||track.readyState!=='live'){stream.getTracks().forEach(t=>t.stop());throw Error('MICROPHONE HAS NO LIVE AUDIO TRACK');}
+      const old=this.stream;this.clearMicCapture();this.stream=stream;this.track=track;this.inputDeviceId=id;
+      track.enabled=true;this.micError=track.muted?'MICROPHONE MUTED / INTERRUPTED':null;
+      track.addEventListener('ended',()=>{
+        if(this.track!==track)return;
+        this.invalidateMicrophone('MICROPHONE DISCONNECTED');this.scheduleRecovery();
       });
-      this.peers.forEach(p => { p.sent = undefined; this.gatePeer(p); });
-      if (old && old !== stream) old.getTracks().forEach(t=>t.stop());
-      this.emit('micstate',{ready:true,label:track.label || 'Microphone',id});
-      return stream;
+      track.addEventListener('mute',()=>{
+        if(this.track!==track)return;
+        this.micError='MICROPHONE MUTED / INTERRUPTED';this.txFault(this.micError);
+        this.emit('micstate',{ready:false,reason:this.micError,id});this.scheduleRecovery();
+      });
+      track.addEventListener('unmute',()=>{
+        if(this.track!==track||!this.micHealthy())return;
+        clearTimeout(this._recoverTimer);this._recoverAttempts=0;this.micError=null;
+        this.emit('micstate',{ready:true,label:track.label||'Microphone',id});
+      });
+      this.peers.forEach(p=>{this.stopClone(p);p.sent=undefined;this.gatePeer(p);});
+      if(old&&old!==stream)old.getTracks().forEach(t=>t.stop());
+      if(!track.muted){this._recoverAttempts=0;clearTimeout(this._recoverTimer);}
+      this.emit('micstate',{ready:this.micHealthy(),label:track.label||'Microphone',reason:this.micError,id});
+      if(track.muted)this.scheduleRecovery();return stream;
     }
     mic() {
-      if (this.stream && this.track?.readyState === 'live') return Promise.resolve(this.stream);
-      if (!this._micP) {
-        if (!navigator.mediaDevices?.getUserMedia) { this.micError='NO AUDIO API (needs HTTPS)';return Promise.reject(new Error(this.micError)); }
-        const generation = ++this._micGeneration, id = this.inputDeviceId;
-        this._micP = navigator.mediaDevices.getUserMedia(this.inputConstraints(id)).then(stream=>{
-          if (generation !== this._micGeneration) { stream.getTracks().forEach(t=>t.stop());throw new Error('MIC REQUEST SUPERSEDED'); }
-          return this.installMic(stream,id);
-        }).catch(e=>{if(generation===this._micGeneration){this._micP=null;this.micError=e.message||'MIC DENIED';this.emit('micstate',{ready:false,reason:this.micError,id});}throw e;});
-      }
-      return this._micP;
+      if(this.micHealthy())return Promise.resolve(this.stream);
+      if(this.track?.readyState==='live'&&this.track.muted)return Promise.reject(Error('MICROPHONE MUTED / INTERRUPTED'));
+      if(this._micP)return this._micP;
+      if(!navigator.mediaDevices?.getUserMedia){this.micError='NO AUDIO API (needs HTTPS)';return Promise.reject(Error(this.micError));}
+      const generation=++this._micGeneration,id=this.inputDeviceId;
+      const request=navigator.mediaDevices.getUserMedia(this.inputConstraints(id)).then(stream=>{
+        if(generation!==this._micGeneration){stream.getTracks().forEach(t=>t.stop());throw Error('MIC REQUEST SUPERSEDED');}
+        return this.installMic(stream,id);
+      }).catch(e=>{
+        if(generation===this._micGeneration){this.micError=e.message||'MIC DENIED';this.emit('micstate',{ready:false,reason:this.micError,id});}throw e;
+      }).finally(()=>{if(generation===this._micGeneration)this._micP=null;});
+      this._micP=request;return request;
     }
     invalidateMicrophone(reason) {
       this.release();++this._micGeneration;this.clearMicCapture();
-      if(this.stream)this.stream.getTracks().forEach(t=>t.stop());this.stream=null;this.track=null;this._micP=null;this.micError=reason;
-      this.emit('micstate',{ready:false,reason,id:this.inputDeviceId});
+      const old=this.stream;this.stream=null;this.track=null;this._micP=null;this.micError=reason;
+      this.peers.forEach(p=>this.stopClone(p));if(old)old.getTracks().forEach(t=>t.stop());
+      this.logRadio('mic-fault',reason);this.emit('micstate',{ready:false,reason,id:this.inputDeviceId});
     }
-    async selectMicrophone(id = '') {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('MICROPHONE SELECTION REQUIRES HTTPS / AUDIO PERMISSION');
-      this.release();const generation = ++this._micGeneration;
-      const request = navigator.mediaDevices.getUserMedia(this.inputConstraints(id));
-      this._micP = request.then(stream=>{
-        if(generation!==this._micGeneration){stream.getTracks().forEach(t=>t.stop());throw new Error('MIC REQUEST SUPERSEDED');}
-        this.installMic(stream,id);try{localStorage.ulAudioInput=id;}catch(e){}return stream;
-      }).catch(e=>{if(generation===this._micGeneration)this._micP=null;throw e;});
-      return this._micP;
+    async selectMicrophone(id='') {
+      if(!navigator.mediaDevices?.getUserMedia)throw Error('MICROPHONE SELECTION REQUIRES HTTPS / AUDIO PERMISSION');
+      this.release();clearTimeout(this._recoverTimer);const generation=++this._micGeneration;
+      const request=navigator.mediaDevices.getUserMedia(this.inputConstraints(id)).then(stream=>{
+        if(generation!==this._micGeneration){stream.getTracks().forEach(t=>t.stop());throw Error('MIC REQUEST SUPERSEDED');}
+        this.installMic(stream,id);try{localStorage.ulAudioInput=id;}catch{}return stream;
+      }).finally(()=>{if(generation===this._micGeneration)this._micP=null;});
+      this._micP=request;return request;
     }
     /** Recover the selected input only; it must not reopen PTT or select a different mic. */
-    recover() {
-      this.audioCtx();
-      if (this.track?.readyState === 'live') return Promise.resolve(false);
-      this.clearMicCapture();this.stream=null;this.track=null;this._micP=null;
-      this.peers.forEach(p=>{p.sent=undefined;});
-      return this.mic().then(()=>{this.applyGate();this.emit('recovered');return true;}).catch(()=>false);
+    async recover(force=false) {
+      this.audioCtx();if(this.micHealthy())return false;
+      if(this._recoverPromise)return this._recoverPromise;
+      this._recoverPromise=(async()=>{
+        this.release();if(force&&this.track?.muted)this.invalidateMicrophone('RECONNECTING SELECTED MICROPHONE');
+        try{await this.mic();if(!this.micHealthy())return false;this.emit('recovered');return true;}catch{return false;}
+      })().finally(()=>{this._recoverPromise=null;});return this._recoverPromise;
     }
     /* ---- roster sync: create peers where I am the initiator, drop peers that left ---- */
     sync(ids) {
@@ -277,7 +395,7 @@
     connectTo(ids) { this.sync(ids); }          // backwards-compatible name
     dropPeer(id) {
       const p = this.peers.get(id); if (!p) return;
-      this.peers.delete(id); clearTimeout(p.retry);
+      this.peers.delete(id);clearTimeout(p.retry);this.stopClone(p);
       try { p.rtc.close(); } catch (e) {}
       if (p.audio) { p.audio.srcObject = null; p.audio.remove(); this.blocked.delete(p.audio); }
     }
@@ -340,59 +458,97 @@
     }
     /* ---- transmit gating ---- */
     isTarget(id) { return this.targets === 'all' || (Array.isArray(this.targets) && this.targets.includes(id)); }
-    p2pUp(id) { const p = this.peers.get(id); return !!(p && this.mode !== 'relay' && p.rtc.connectionState === 'connected' && p.sender); }
+    p2pUp(id) {
+      const p=this.peers.get(id);
+      return !!(p&&this.mode!=='relay'&&!p.forceRelay&&p.rtc.connectionState==='connected'&&p.sender);
+    }
     gatePeer(p) {
-      if (!p.sender) return;
-      const want = this.keyed && this.track && this.isTarget(p.id) && p.rtc.connectionState === 'connected' ? this.track : null;
-      if (p.sent === want) return;
-      p.sent = want; p.sender.replaceTrack(want).catch(() => {});
+      if(!p.sender)return;
+      const allowed=this.keyed&&this.micHealthy()&&this.isTarget(p.id)&&this.p2pUp(p.id);
+      if(allowed&&(!p.clone||p.cloneSource!==this.track)){
+        this.stopClone(p);p.clone=this.track.clone();p.cloneSource=this.track;p.clone.enabled=false;
+      }
+      if(p.clone)p.clone.enabled=!!allowed;
+      p.wantTrack=allowed?p.clone:null;
+      if(p.attachBusy)return;
+      p.attachBusy=true;
+      const drain=async()=>{
+        try{
+          while(this.peers.get(p.id)===p&&p.sent!==p.wantTrack){
+            const want=p.wantTrack;let timer;
+            try{
+              await Promise.race([Promise.resolve(p.sender.replaceTrack(want)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('TRACK ATTACH TIMEOUT')),2000);})]);
+              p.sent=want; // only record a successful attachment
+              if(this.peers.get(p.id)===p)this.applyGate();
+            }catch(e){
+              if(p.clone)p.clone.enabled=false;
+              // A late failed/stalled attachment can only attach a disabled clone.
+              p.attachBusy=false;this.forceRelay(p,'MIC TRACK ATTACHMENT FAILED');return;
+            }finally{clearTimeout(timer);}
+          }
+        }finally{p.attachBusy=false;}
+      };drain().catch(()=>{p.attachBusy=false;this.forceRelay(p,'MIC TRACK ATTACHMENT FAILED');});
     }
     applyGate() {
-      this.peers.forEach(p => this.gatePeer(p));
-      const list = [...this.known].filter(id => this.isTarget(id));
-      const relay = this.keyed ? list.filter(id => !this.p2pUp(id)) : [];
-      const sig = relay.slice().sort().join(',');
-      if (sig !== this._relaySig) { this._relaySig = sig; this.relayTargets = relay; if (this.keyed) this.link.send({ t: 'ptt.relay', relay }); }
-      this.setCapture(this.keyed && relay.length > 0);
-      return relay;
+      this.peers.forEach(p=>this.gatePeer(p));
+      const list=[...this.known].filter(id=>this.isTarget(id));
+      const relay=this.keyed?list.filter(id=>!this.p2pUp(id)||this.peers.get(id)?.sent!==this.peers.get(id)?.clone):[];
+      const sig=relay.slice().sort().join(',');
+      if(sig!==this._relaySig){this._relaySig=sig;this.relayTargets=relay;if(this.keyed&&this.link.ready)this.link.send({t:'ptt.relay',relay});}
+      // Process/measure the input during ALL transmissions, including direct P2P.
+      try{this.setCapture(this.keyed);}catch{if(this.keyed)this.txFault('AUDIO CAPTURE FAILED — TAP REPAIR RADIO');}return relay;
     }
-    /** open the channel: the ptt banner goes out now, the mic opens after `delay` ms (so the key beep is not sent) */
-    transmit(targets, delay) {
-      this.targets = targets || 'all'; this.keyed = false; this._relaySig = null;
-      const list = [...this.known].filter(id => this.isTarget(id));
-      const relay = list.filter(id => !this.p2pUp(id));
-      this._pttAnnounced = true; this.link.send({ t: 'ptt', state: 'start', targets: this.targets, relay });
-      this._relaySig = relay.slice().sort().join(','); this.relayTargets = relay;
-      clearTimeout(this._open);
-      this._open = setTimeout(() => { this._openedAt = Date.now(); this.keyed = true; this.applyGate(); }, delay == null ? 120 : delay);
-      if (!this.stream) this.mic().then(() => this.keyed && this.applyGate()).catch(() => this.emit('micerror', this.micError));
+    /** prepare audio, then announce PTT after the key-beep delay; release cancels preparation */
+    transmit(targets,delay) {
+      this.audioCtx(); // synchronous user-gesture unlock, including consumed hardware keys
+      if(!this.link.ready){this.txFault('RADIO LINK OFFLINE — NOT TRANSMITTED');return false;}
+      this.release();this.targets=targets||'all';this._requested=true;this.lastFault='';this.warning='';this.receipts.clear();
+      const token=++this._txGeneration,start=Date.now();
+      this.txid=this.sid+'-'+token+'-'+Date.now().toString(36);this.emit('txstate',{state:'preparing'});
+      const prepare=async()=>{
+        try{
+          await Promise.all([this.mic(),this.ensureAudio()]);
+          if(!this._requested||token!==this._txGeneration)return;
+          if(!this.micHealthy())throw Error('MICROPHONE NOT READY');
+          this._open=setTimeout(()=>{
+            if(!this._requested||token!==this._txGeneration)return;
+            if(!this.link.ready||!this.micHealthy()){this.txFault('MICROPHONE OR LINK LOST — NOT TRANSMITTED');return;}
+            this._openedAt=Date.now();this.logRadio('tx-start','REQUESTED AUDIO; WAITING FOR SOFTWARE RECEIPTS');this._lastSignalAt=this._openedAt;this._lastCapture=this._openedAt;this.keyed=true;
+            this.peers.forEach(p=>{p.rtpAt=this._openedAt;p.rtpCount=null;});
+            const relay=[...this.known].filter(id=>this.isTarget(id)&&!this.p2pUp(id));
+            this._pttAnnounced=true;this.link.send({t:'ptt',state:'start',targets:this.targets,relay,txid:this.txid});
+            this._relaySig=null;this.applyGate();this.emit('txstate',{state:'sending'});
+          },Math.max(0,(delay==null?120:delay)-(Date.now()-start)));
+        }catch(e){if(token===this._txGeneration){this.micError=this.micHealthy()?null:(e.message||'MICROPHONE UNAVAILABLE');this.txFault(e.message||'RADIO COULD NOT START');}}
+      };prepare();return true;
     }
     release() {
-      clearTimeout(this._open); this._open = null;
-      const was = this.keyed; this.keyed = false; this.applyGate(); this.setCapture(false);
-      if (this._pttAnnounced) this.link.send({ t: 'ptt', state: 'end', targets: this.targets });
-      this._pttAnnounced = false;
-      return was;
+      ++this._txGeneration;this._requested=false;clearTimeout(this._open);this._open=null;
+      const was=this.keyed;this.keyed=false;this.peers.forEach(p=>{if(p.clone)p.clone.enabled=false;});
+      this.applyGate();this.setCapture(false);
+      if(this._pttAnnounced&&this.link.ready)this.link.send({t:'ptt',state:'end',targets:this.targets,txid:this.txid});
+      this._pttAnnounced=false;this.emit('txstate',{state:'idle'});return was;
     }
     key(open) { open ? this.transmit(this.targets) : this.release(); }   // legacy
     async setTargets(ids) { this.targets = ids; if (this.keyed) this.applyGate(); }
     /* ---- relay capture: mic -> 12 kHz mu-law -> WebSocket ---- */
     setCapture(on) {
       this._capOn = on;
-      if (!on || this._proc || !this.stream) return;
-      const c = this.audioCtx(); if (!c) return;
+      if(!on||!this.stream)return;
+      const c=this.audioCtx();if(!c||this._proc)return;
       const src = c.createMediaStreamSource(this.stream), proc = c.createScriptProcessor(2048, 1, 1);
       const mute = c.createGain(); mute.gain.value = 0;
       let pos = 0, seq = 0; const ratio = c.sampleRate / RELAY_RATE;
       proc.onaudioprocess = e => {
-        if (!this._capOn || !this.link.ready) return;
-        const inp = e.inputBuffer.getChannelData(0), n = Math.floor((inp.length - pos) / ratio);
+        if(!this._capOn||!this.keyed||!this.link.ready)return;
+        const inp=e.inputBuffer.getChannelData(0);this._lastCapture=Date.now();let energy=0;for(const x of inp)energy+=x*x;this.level=Math.sqrt(energy/inp.length);if(this.level>.001){this._lastSignalAt=Date.now();if(this.warning==='NO MIC SIGNAL — SPEAK / CHECK INPUT')this.warning='';}
+        if(!this.relayTargets?.length)return;const n=Math.floor((inp.length-pos)/ratio);
         if (n <= 0) return;
         const out = new Uint8Array(4 + n); out[0] = 1; out[1] = (seq >> 8) & 255; out[2] = seq & 255; out[3] = RELAY_RATE / 1000; seq = (seq + 1) & 0xffff;
         let k = 0, t = pos;
         for (; k < n; k++, t += ratio) { const i = t | 0, f = t - i, a = inp[i], b = i + 1 < inp.length ? inp[i + 1] : a; out[4 + k] = muEnc((a + (b - a) * f) * 1.4); }
         pos = t - inp.length; if (pos < 0) pos = 0;
-        this.stats.relayTx += out.length; this.link.sendBinary(out.buffer);
+        if(this.link.sendBinary(out.buffer)!==false)this.stats.relayTx+=out.length;else this.setWarning('AUDIO NETWORK CONGESTED — SOME PACKETS DROPPED');
       };
       src.connect(proc); proc.connect(mute); mute.connect(c.destination); this._proc = proc; this._micSource = src; this._micMute = mute;
     }
@@ -400,10 +556,10 @@
       const u8 = new Uint8Array(buf); if (u8.length < 6) return;
       const L = u8[0], id = new TextDecoder().decode(u8.subarray(1, 1 + L)), body = u8.subarray(1 + L);
       if (body[0] !== 1 || body.length < 5) return;
-      this.stats.relayRx += body.length;
+      this.stats.relayRx+=body.length;const inbound=this.inbound.get(id);if(inbound)inbound.relayPackets++;
       if (this.muted.has(id)) return;
-      const c = this.audioCtx(); if (!c) return;
-      const rate = body[3] * 1000 || RELAY_RATE, n = body.length - 4;
+      const c=this.audioCtx();if(!c)return;if(c.state!=='running'){this.emit('blocked');return;}
+      const rate=body[3] * 1000 || RELAY_RATE, n = body.length - 4;
       const ab = c.createBuffer(1, n, rate), ch = ab.getChannelData(0);
       for (let i = 0; i < n; i++) ch[i] = MU[body[4 + i]];
       let st = this.rx.get(id);
@@ -421,7 +577,10 @@
     summary() {
       const ids = [...this.known]; let p2p = 0;
       ids.forEach(id => { if (this.p2pUp(id)) p2p++; });
-      return { total: ids.length, p2p, relay: ids.length - p2p, mode: this.mode, mic: !!this.track, micError: this.micError };
+      const now=Date.now(),targets=ids.filter(id=>this.isTarget(id));let received=0,blocked=0;
+      for(const id of targets){const r=this.receipts.get(id);if(r&&now-r.at<4000){if(r.state==='flowing')received++;if(r.state==='blocked'||r.state==='muted')blocked++;}}
+      const status=this.lastFault||(!this.micHealthy()?'MIC NOT READY':this._requested&&!this.keyed?'PREPARING AUDIO':this.keyed?('TX ACTIVE · MEDIA RECEIVED '+received+'/'+targets.length+(blocked?' · BLOCKED/MUTED '+blocked:'')+(this.warning?' · '+this.warning:'')):this.warning||'RADIO IDLE');
+      return{total:ids.length,p2p,relay:ids.length-p2p,mode:this.mode,mic:this.micHealthy(),micError:this.micError,requested:this._requested,keyed:this.keyed,received,targets:targets.length,level:this.level,status,warning:this.warning,fault:this.lastFault};
     }
   }
   /* ---------------------------------------------------- telemetry engine  */
@@ -612,7 +771,7 @@ class HardwarePTT {
     if(this.testing){this.show('TEST: BUTTON PRESSED ('+e.code+') — NO RADIO TRANSMISSION.');return;}
     if(this.config.mode==='toggle'&&this.active){this.release('PTT CLOSED');this.down=true;return;}
     const voice=this.opts.getVoice();
-    if(!this.opts.canTransmit()||!voice?.track||voice.track.readyState!=='live'){this.show('PTT NOT OPENED — CHECK MIC, LINK AND NORMAL RADIO MODE.');return;}
+    if(!this.opts.canTransmit()||!voice?.micHealthy()){this.show('PTT NOT OPENED — CHECK MIC, LINK AND NORMAL RADIO MODE.');return;}
     this.opts.start();this.active=!!this.opts.transmitting();
     if(this.active){this.show('PHYSICAL PTT TRANSMITTING TO ALL UNITS');this.timer=setTimeout(()=>{this.release('60-SECOND SAFETY LIMIT — RELEASE AND PRESS AGAIN');this.down=this.config.mode==='hold';},this.config.limit*1000);}
   }
@@ -681,8 +840,10 @@ class HardwarePTT {
   stopMeter(){cancelAnimationFrame(this.meterFrame);try{this.meterSource?.disconnect();}catch(e){}this.meterSource=null;this.analyser=null;const meter=this.el('meter');if(meter)meter.value=0;}
   unmount(){this.stopMeter();this.testing=false;this.learning=false;clearTimeout(this.learnTimer);this.root=null;}
   mount(root){this.unmount();this.root=root;
-    root.innerHTML='<section class="hw-panel"><h3>BLUETOOTH / USB AUDIO &amp; PHYSICAL PTT</h3><p class="hw-note">Pair your device in Windows/macOS first. ULTRALINK supports microphones exposed as standard audio inputs and PTT buttons that send keyboard/HID key events to this page. Proprietary radio-only buttons need device-specific integration.</p><button type="button" data-hw="refresh">ALLOW MIC ACCESS / REFRESH DEVICES</button><label for="hwInput">Audio input</label><select id="hwInput" data-hw="input"><option value="">Default — system microphone</option></select><div class="hw-row"><button type="button" data-hw="default">USE SYSTEM DEFAULT</button><button type="button" data-hw="micTest">TEST MIC LEVEL</button><button type="button" data-hw="meterStop">STOP MIC TEST</button></div><meter data-hw="meter" min="0" max="100" value="0" aria-label="Local microphone level"></meter><div class="hw-divider"><label>Physical PTT button · broadcasts to all units</label><div class="hw-key" data-hw="binding"></div><div class="hw-row"><button type="button" data-hw="learn">LEARN PTT BUTTON</button><button type="button" data-hw="clear">CLEAR BUTTON</button><button type="button" data-hw="test" aria-pressed="false">TEST BUTTON — NO TX</button></div><label for="hwMode">Button behavior</label><select id="hwMode" data-hw="mode"><option value="hold">Hold — press / release</option><option value="toggle">Toggle — tap on / off</option></select><p class="hw-note">The learned key overrides any shortcut using that same key; prefer an unused key. Keep this window focused. Typing and dialogs cannot start transmission. Loss of focus, link loss, mic loss or the 60-second safety limit closes PTT. Media buttons work only when the browser receives their events; OS-intercepted buttons cannot be learned here.</p></div><div class="hw-status" data-hw="status" role="status" aria-live="polite"></div></section>';
+    root.innerHTML='<section class="hw-panel"><h3>BLUETOOTH / USB AUDIO &amp; PHYSICAL PTT</h3><p class="hw-note">Pair your device in Windows/macOS first. ULTRALINK supports microphones exposed as standard audio inputs and PTT buttons that send keyboard/HID key events to this page. Proprietary radio-only buttons need device-specific integration.</p><button type="button" data-hw="refresh">ALLOW MIC ACCESS / REFRESH DEVICES</button><label for="hwInput">Audio input</label><select id="hwInput" data-hw="input"><option value="">Default — system microphone</option></select><div class="hw-row"><button type="button" data-hw="default">USE SYSTEM DEFAULT</button><button type="button" data-hw="micTest">TEST MIC LEVEL</button><button type="button" data-hw="meterStop">STOP MIC TEST</button></div><meter data-hw="meter" min="0" max="100" value="0" aria-label="Local microphone level"></meter><div class="hw-divider"><label>Physical PTT button · broadcasts to all units</label><div class="hw-key" data-hw="binding"></div><div class="hw-row"><button type="button" data-hw="learn">LEARN PTT BUTTON</button><button type="button" data-hw="clear">CLEAR BUTTON</button><button type="button" data-hw="test" aria-pressed="false">TEST BUTTON — NO TX</button></div><label for="hwMode">Button behavior</label><select id="hwMode" data-hw="mode"><option value="hold">Hold — press / release</option><option value="toggle">Toggle — tap on / off</option></select><p class="hw-note">The learned key overrides any shortcut using that same key; prefer an unused key. Keep this window focused. Typing and dialogs cannot start transmission. Loss of focus, link loss, mic loss or the 60-second safety limit closes PTT. Media buttons work only when the browser receives their events; OS-intercepted buttons cannot be learned here.</p></div><div class="hw-row"><button type="button" data-hw="repair">REPAIR RADIO</button><button type="button" data-hw="export">EXPORT RADIO DIAGNOSTICS</button></div><p class="hw-note">Repair reconnects the selected microphone and voice paths with PTT closed. Diagnostics contain status/counters, not recorded audio or account credentials.</p><div class="hw-status" data-hw="status" role="status" aria-live="polite"></div></section>';
     this.drawBinding();this.show(this.status);this.listDevices(false);
+    this.el('repair').onclick=async()=>{this.stopMeter();this.release('REPAIRING RADIO — PTT CLOSED');const v=this.opts.getVoice();if(!v)return this.show('ENTER A MISSION FIRST');try{await v.repair();this.show('RADIO REPAIRED — TEST WITH A RIDER BEFORE CONTINUING');}catch(e){this.show('REPAIR FAILED: '+e.message);}};
+    this.el('export').onclick=()=>{const v=this.opts.getVoice();if(!v)return this.show('ENTER A MISSION FIRST');const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify(v.diagnostics(),null,2)],{type:'application/json'}));a.href=url;a.download='ultralink-radio-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
     this.el('refresh').onclick=()=>this.listDevices(true);this.el('input').onchange=e=>this.chooseInput(e.target.value);this.el('default').onclick=()=>this.chooseInput('');
     this.el('micTest').onclick=()=>this.startMeter();this.el('meterStop').onclick=()=>{this.stopMeter();this.show('LOCAL MIC TEST STOPPED');};
     this.el('learn').onclick=()=>{this.release();this.stopMeter();this.testing=false;this.el('test').setAttribute('aria-pressed','false');this.learning=true;this.drawBinding();this.show('PRESS AND RELEASE YOUR PHYSICAL PTT BUTTON NOW. ESCAPE CANCELS. NO TRANSMISSION.');this.learnTimer=setTimeout(()=>{if(this.learning){this.cancelLearn();this.show('NO BUTTON EVENT RECEIVED. CHECK PAIRING / FOCUS; THIS BUTTON MAY USE AN UNSUPPORTED PROTOCOL.');}},15000);};
