@@ -213,7 +213,7 @@
     if (!list.length) {
       $('profList').innerHTML = tab === 'training'
         ? `<div class="hint" style="padding:10px 4px;line-height:1.8">No training profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW TRAINING PROFILE</b>, import the GPX and ULTRALINK tells you straight away whether the route goes <b>A → B</b> or loops back <b>A → A</b>. For a loop you can set the number of <b>laps</b> and a target time for each lap; sector times are then shown lap by lap.</div>`
-        : `<div class="hint" style="padding:10px 4px;line-height:1.8">No race profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW RACE PROFILE</b> to plan a race: import the GPX, set the date and departure time, drop checkpoints on the route and assign rider codenames. Everything is saved on this device.</div>`;
+        : `<div class="hint" style="padding:10px 4px;line-height:1.8">No race profiles yet.<br>Press <b style="color:var(--accent)">＋ NEW RACE PROFILE</b> to plan a race: import the GPX, set the date and departure time, drop checkpoints on the route and assign rider codenames. Profiles sync to your account. Resume an active mission above without resetting it.</div>`;
       return;
     }
     const sorted = list.slice().sort((a, b) => (startMs(a) || 9e15) - (startMs(b) || 9e15));

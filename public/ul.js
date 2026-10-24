@@ -158,7 +158,7 @@
       const old = this.ws; this.ws = null; try { old && old.close(); } catch (e) {}
       clearInterval(this._hb);this.emit('close');this.retry=0;this.connect(this.url);
     }
-    send(m) {if(this.ready){this.ws.send(JSON.stringify(m));return true;}if(!['ptt','ptt.relay','signal','voice.receipt'].includes(m.t))this.queue.push(m);return false;}
+    send(m) {if(this.ready){this.ws.send(JSON.stringify(m));return true;}if(!['ptt','ptt.relay','signal','voice.receipt','battery'].includes(m.t))this.queue.push(m);return false;}
     sendBinary(b) {if(!this.ready||this.ws.bufferedAmount>262144)return false;this.ws.send(b);return true;}
     emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
     on(type, fn) { this.addEventListener(type, e => fn(e.detail)); return this; }
@@ -311,7 +311,7 @@
       this.emit('health',this.summary());
     }
     diagnostics() {
-      return{version:'1.12.2',at:new Date().toISOString(),context:this.ctx?.state||'not-started',mic:this.micHealthy(),trackState:this.track?.readyState||'none',trackMuted:!!this.track?.muted,mode:this.mode,keyed:this.keyed,stats:{...this.stats},status:this.summary().status,captureAgeMs:this._lastCapture?Date.now()-this._lastCapture:null,inputLevel:this.level,peers:[...this.peers.values()].map(p=>({id:p.id,connection:p.rtc.connectionState,relay:!!p.forceRelay,attached:!!p.sent})),events:this.radioLog.slice()};
+      return{version:'1.12.3',at:new Date().toISOString(),context:this.ctx?.state||'not-started',mic:this.micHealthy(),trackState:this.track?.readyState||'none',trackMuted:!!this.track?.muted,mode:this.mode,keyed:this.keyed,stats:{...this.stats},status:this.summary().status,captureAgeMs:this._lastCapture?Date.now()-this._lastCapture:null,inputLevel:this.level,peers:[...this.peers.values()].map(p=>({id:p.id,connection:p.rtc.connectionState,relay:!!p.forceRelay,attached:!!p.sent})),events:this.radioLog.slice()};
     }
     inputConstraints(id) {
       return { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true, ...(id ? {deviceId:{exact:id}} : {}) } };
@@ -729,7 +729,13 @@
     secure: global.isSecureContext !== false
   };
 
-  global.UL = { platform, haversine, bearing, parseGPX, buildRoute, snap, Link, VoiceNet, Telemetry, BleSensors, EMA, fmt, COLORS: ['#00e5ff', '#ffb000', '#7cff5a', '#ff4d6d', '#b06bff', '#ff8a3d', '#4dffd5', '#ffe14d'] };
+  function batteryView(b,now=Date.now()){
+    if(!b)return{text:'BAT — WAITING',color:'var(--dim)'};
+    if(b.status!=='ok'||!Number.isFinite(b.percent))return{text:'BATTERY UNAVAILABLE',color:'var(--dim)'};
+    const age=Math.max(0,Math.floor((now-b.at)/1000)),stale=!Number.isFinite(age)||age>90;
+    return{text:'BAT '+b.percent+'%'+(b.charging?' · CHARGING':'')+' · '+(stale?'STALE':age+'s ago'),color:stale?'var(--dim)':b.percent<=15?'var(--bad)':b.percent<=30?'var(--warn)':'var(--good)'};
+  }
+  global.UL = { batteryView, platform, haversine, bearing, parseGPX, buildRoute, snap, Link, VoiceNet, Telemetry, BleSensors, EMA, fmt, COLORS: ['#00e5ff', '#ffb000', '#7cff5a', '#ff4d6d', '#b06bff', '#ff8a3d', '#4dffd5', '#ffe14d'] };
 })(window);
 
 ;

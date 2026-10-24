@@ -19,14 +19,36 @@ const accounts = require('./accounts')();
 const STORE = path.join(accounts.dataDir || __dirname, 'missions.json');
 
 /* ---------------------------------------------------------------- storage */
-let missions = {};           // code -> { code, name, createdAt, route, riders[], waypoints[] }
-try { missions = JSON.parse(fs.readFileSync(STORE, 'utf8')); } catch (_) {}
-let saveTimer = null;
-function persist() {
+// One relay instance is the live-state authority. PostgreSQL optimistic versions
+// prevent an overlapping/old instance from overwriting a newer snapshot.
+let missions={},members={},closedMissions={},liveVersion=0,dirty=false,storeError='',saveTimer=null,saveChain=Promise.resolve();
+const sectorContext={window:{}};require('vm').runInNewContext(fs.readFileSync(path.join(PUBLIC,'ul-sectors.js'),'utf8'),sectorContext,{timeout:1000});
+const SectorTimer=sectorContext.window.UL.SectorTimer,missionTimers=new Map();
+function timerFor(code){
+  if(!missionTimers.has(code)){
+    const m=missions[code],t=new SectorTimer(m.sectors||[],m.distance||1);
+    for(const[id,u]of Object.entries(members[code]||{}))if(u.timing)t.units.set(id,u.timing);
+    missionTimers.set(code,t);
+  }return missionTimers.get(code);
+}
+function timingFor(code){return Object.fromEntries(Object.values(members[code]||{}).filter(u=>u.role==='rider'&&u.timing).map(u=>[u.callsign,u.timing]));}
+function storageStatus(){return{t:'mission.storage',ok:!storeError,error:storeError||null};}
+function persist(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(()=>flushMissions().catch(()=>{}),500);}
+function flushMissions(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    fs.writeFile(STORE, JSON.stringify(missions), () => {});
-  }, 500);
+  saveChain=saveChain.catch(()=>{}).then(async()=>{
+    if(!dirty)return;dirty=false;
+    const snapshot=JSON.parse(JSON.stringify({missions,members,closedMissions}));
+    try{liveVersion=await accounts.store.saveLiveState(snapshot,liveVersion);const recovered=!!storeError;storeError='';if(recovered)clients.forEach(c=>c.send(storageStatus()));}
+    catch(e){dirty=true;storeError=e.code==='MISSION_WRITER_CONFLICT'?'MULTIPLE RELAY WRITERS — STOP OLD INSTANCE':'MISSION BACKUP NOT CONFIRMED';console.error('LIVE MISSION STORAGE ERROR',e.code||'QUERY_FAILED');clients.forEach(c=>c.send(storageStatus()));if(e.code!=='MISSION_WRITER_CONFLICT')saveTimer=setTimeout(()=>flushMissions().catch(()=>{}),3000);throw e;}
+  });return saveChain;
+}
+function memberChanged(c){if(!c.mission||c.audioOf)return;members[c.mission]??={};members[c.mission][c.id]={id:c.id,account:c.account,role:c.role,callsign:c.callsign,color:c.color,data:c.telemetry||null,telAt:c.telAt||0,battery:c.battery||null,timing:c.role==='rider'?timerFor(c.mission).units.get(c.id)||null:null};}
+function batteryValue(b){
+  if(!b||!['ok','unavailable','error'].includes(b.status))return null;
+  if(b.status!=='ok')return{status:b.status,percent:null,charging:null,at:Date.now()};
+  if(!Number.isFinite(b.percent)||b.percent<0||b.percent>100||typeof b.charging!=='boolean')return null;
+  return{status:'ok',percent:Math.round(b.percent),charging:b.charging,at:Date.now()};
 }
 
 /* ------------------------------------------------------------ http static */
@@ -41,6 +63,12 @@ async function serve(req, res) {
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Referrer-Policy','same-origin');
   if(await accounts.route(req,res))return;
+  if(req.url?.split('?')[0]==='/api/missions/active'){
+    try{const auth=await accounts.authenticate(req);if(!auth){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify({error:'Sign in to resume a mission.'}));}
+      const active=Object.values(missions).filter(m=>m.owner===auth.callsign&&m.kind!=='comms').map(m=>({code:m.code,name:m.name,clockStart:m.clockStart||null,riders:peers(m.code,null).filter(c=>c.role==='rider').length,createdAt:m.createdAt}));
+      res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify({missions:active,storage:storageStatus()}));
+    }catch{res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store'});return res.end(JSON.stringify({error:'Mission list unavailable. Retry shortly.'}));}
+  }
   let url;
   try { url=decodeURIComponent((req.url||'/').split('?')[0]); } catch {res.writeHead(400);return res.end('Bad URL');}
   const modeFiles={'/escort.html':'escort','/rider.html':'rider','/comms.html':'comms'};
@@ -139,7 +167,7 @@ class Client {
       if (f.fin) {
         const payload = Buffer.concat(this.frags); this.frags = [];
         if (this.opcode === 0x1) {
-          try { handle(this, JSON.parse(payload.toString('utf8'))); } catch (e) {}
+          try { Promise.resolve(handle(this,JSON.parse(payload.toString('utf8')))).catch(()=>this.send({t:'error',code:'MISSION_STORAGE',msg:'Live mission storage not confirmed. Check connection and retry; do not start a duplicate mission.'})); } catch (e) {}
         } else if (this.opcode === 0x2) {
           handleBinary(this, payload);
         }
@@ -202,7 +230,7 @@ function unitById(code, id) {
 function deliver(p, msg) { p.send(msg); const s = sidecar(p.mission, p.id); if (s) s.send(msg); }
 function roster(code) {
   return peers(code, null).map(c => ({
-    id: c.id, role: c.role, callsign: c.callsign, color: c.color, telemetry: c.telemetry, riderName:c.riderName||'', weightKg:c.weightKg||null
+    id: c.id, role: c.role, callsign: c.callsign, color: c.color, telemetry:c.telemetry,telAt:c.telAt||0,battery:c.battery||null,riderName:c.riderName||'', weightKg:c.weightKg||null
   }));
 }
 function broadcastRoster(code) {
@@ -221,12 +249,18 @@ function alertState(code) {
   broadcast(code, { t: 'rider.alert.state', alerts: missions[code]?.riderAlerts || [] });
 }
 const emergencyMessages = new Map(); // short-lived delivery/playback receipts, never mission persistence
-function handle(c, m) {
+async function handle(c, m) {
   if(!accounts.session(c.authRequest)){c.send({t:'error',code:'AUTH_REQUIRED',msg:'Sign in again.'});c.close();return;}
   switch (m.t) {
     case 'mission.create': {
       const code = (m.code || genCode()).toUpperCase();
+      if(!/^[A-Z0-9_-]{3,16}$/.test(code))return c.send({t:'error',code:'BAD_CODE',msg:'Use a 3–16 character mission code.'});
+      if(closedMissions[code])return c.send({t:'error',code:'MISSION_CLOSED',msg:'This mission was explicitly closed. Generate a new code for a new mission.'});
       const prev = missions[code] || {};
+      if(prev.code){
+        if(prev.owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Mission belongs to another account.'});
+        await flushMissions();return c.send({t:'mission.created',mission:prev,resumed:true});
+      }
       if(prev.owner && prev.owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Mission belongs to another account.'});
       missions[code] = Object.assign(prev, {
         code, owner:c.account, name: m.name || 'UNNAMED OP', createdAt: prev.createdAt || Date.now(),
@@ -240,14 +274,14 @@ function handle(c, m) {
         mis.clockStart = m.clockStart || null; mis.clockStop = m.clockStop || null;
         mis.autoStarted = !!m.clockStart || !!mis.autoStarted;
       }
-      persist();
+      persist();await flushMissions();
       c.send({ t: 'mission.created', mission: missions[code] });
       break;
     }
     case 'mission.update': {
       if (missions[m.code]) {
         if(missions[m.code].owner && missions[m.code].owner!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Only the mission owner can edit it.'});
-        const patch={...m.patch};delete patch.owner;delete patch.code;
+        const allowed=['name','startAt','targetSec','lead'];const patch=Object.fromEntries(Object.entries(m.patch||{}).filter(([key])=>allowed.includes(key))); 
         Object.assign(missions[m.code], patch);
         if (m.patch && m.patch.startAt !== undefined) missions[m.code].autoStarted = false;
         persist();
@@ -263,7 +297,8 @@ function handle(c, m) {
       if (m.action === 'stop') { mis.clockStop = Date.now(); }
       if (m.action === 'reset') { mis.clockStart = null; mis.clockStop = null; }
       if (m.targetSec !== undefined) mis.targetSec = m.targetSec;
-      persist();
+      if(m.action==='reset'){missionTimers.delete(m.code);for(const u of Object.values(members[m.code]||{}))u.timing=null;}
+      persist();await flushMissions();
       broadcast(m.code, { t: 'mission.clock', clockStart: mis.clockStart || null, clockStop: mis.clockStop || null, targetSec: mis.targetSec || null }, null);
       break;
     }
@@ -274,10 +309,8 @@ function handle(c, m) {
       const reason = m.reason || (m.mode === 'close' ? 'MISSION CLOSED' : 'MISSION ABORTED');
       const payload = { t: 'mission.ended', mode: m.mode === 'close' ? 'close' : 'abort', reason, by: c.callsign || 'ESCORT' };
       const all = [...clients].filter(p => p.mission === code && p.alive);   // units + radio sidecars
-      all.forEach(p => p.send(payload));
-      delete missions[code];
-      persist();
-      all.forEach(p => { p.mission = null; });
+      closedMissions[code]={at:Date.now(),owner:c.account};delete missions[code];delete members[code];missionTimers.delete(code);
+      persist();await flushMissions();all.forEach(p=>p.send(payload));all.forEach(p=>{p.mission=null;});
       break;
     }
     case 'channel.create': {     // COMMS MODE: open intercom channel, numeric Channel ID, no telemetry / location
@@ -293,7 +326,7 @@ function handle(c, m) {
       const mis = missions[code];
       const wantUnit = m.role === 'unit';
       if (wantUnit && (!mis || mis.kind !== 'comms')) return c.send({ t: 'error', code: 'NO_CHANNEL', msg: 'Channel ID not found' });
-      if (!mis || (!wantUnit && mis.kind === 'comms')) return c.send({ t: 'error', code: 'NO_MISSION', msg: 'Mission code not found' });
+      if (!mis || (!wantUnit && mis.kind === 'comms')) return c.send({t:'error',code:closedMissions[code]?'MISSION_CLOSED':'NO_MISSION',msg:closedMissions[code]?'Mission has been closed by its owner.':'Mission code not found'});
       if (mis.kind === 'comms') mis.lastSeen = Date.now();
       if (m.audio === true) {          // native radio sidecar for unit m.owner
         const owner = String(m.owner || '');
@@ -306,6 +339,7 @@ function handle(c, m) {
       }
       /* same device reconnecting: keep its id so peers keep their voice link and card */
       if (typeof m.resume === 'string' && /^[0-9a-f-]{36}$/i.test(m.resume) && m.resume !== c.id) {
+        const saved=members[code]?.[m.resume];if(saved&&saved.account!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Cannot resume another account’s unit.'});
         const old = [...clients].find(x => x !== c && x.id === m.resume && !x.audioOf);
         if(old&&old.account!==c.account)return c.send({t:'error',code:'FORBIDDEN',msg:'Cannot resume another account’s unit.'});
         if (old) { old.replaced = true; old.close(); }
@@ -317,14 +351,22 @@ function handle(c, m) {
       if(c.role==='rider'&&(!accountUser.riderName||!accountUser.weightKg)){c.mission=null;return c.send({t:'error',code:'RIDER_DETAILS',msg:'Complete rider name and weight in your account first.'});}
       c.riderName=c.role==='rider'?accountUser.riderName:'';c.weightKg=c.role==='rider'?accountUser.weightKg:null;
       c.color = m.color || colorFor(mis, c.callsign);
-      c.send({ t: 'joined', id: c.id, mission: mis, color: c.color });
+      const saved=members[code]?.[c.id];
+      if(saved&&saved.account===c.account&&saved.role===c.role){c.telemetry=saved.data;c.telAt=saved.telAt;c.battery=saved.battery;}
+      memberChanged(c);persist();
+      c.send({t:'joined',id:c.id,mission:mis,color:c.color,timing:timingFor(code),resumeData:saved?.data||null});
+      c.send(storageStatus());
       broadcastRoster(code);
       c.send({ t: 'rider.alert.state', alerts: mis.riderAlerts || [] });
       break;
     }
+    case 'battery': {
+      if(!c.mission||c.role!=='rider'||c.audioOf)return;const b=batteryValue(m.battery);if(!b||Date.now()-(c.batterySentAt||0)<1000)return;c.batterySentAt=Date.now();c.battery=b;memberChanged(c);stateDirty=true;broadcast(c.mission,{t:'battery',id:c.id,battery:b},c);break;
+    }
     case 'telemetry': {
       if (!c.mission || c.role === 'unit' || c.audioOf) return;   // comms channels / radio sidecars carry no telemetry
-      c.telemetry = m.data; c.telAt = Date.now();
+      if(!m.data||typeof m.data!=='object'||Array.isArray(m.data))return;
+      c.telemetry=m.data;c.telAt=Date.now();if(c.role==='rider')timerFor(c.mission).feed(c.id,m.data.covered,c.telAt);memberChanged(c);stateDirty=true;
       const pos = alertPosition(m.data);
       if (pos) (missions[c.mission]?.riderAlerts || []).filter(a => a.riderId === c.id && !a.ack).forEach(a => { a.data = pos; });
       broadcast(c.mission, { t: 'telemetry', id: c.id, callsign: c.callsign, role: c.role, color: c.color, data: m.data, fresh: m.fresh || undefined }, c);
@@ -477,11 +519,22 @@ setInterval(() => {
   }
 }, 500);
 
-server.listen(PORT, '0.0.0.0', () => {
+let stateDirty=false;
+setInterval(()=>{if(stateDirty){stateDirty=false;persist();}},10000);
+async function start(){
+  let legacy={};try{legacy=JSON.parse(fs.readFileSync(STORE,'utf8'));}catch{}
+  // Import only owned v1.12 mission snapshots; account-less samples are not live races.
+  const initial={missions:Object.fromEntries(Object.entries(legacy).filter(([,m])=>m&&m.owner)),members:{},closedMissions:{}};
+  const saved=await accounts.store.loadLiveState(initial);liveVersion=saved.version;
+  missions=saved.snapshot.missions||{};members=saved.snapshot.members||{};closedMissions=saved.snapshot.closedMissions||{};
+  console.log('POSTGRES LIVE MISSIONS RESTORED',Object.keys(missions).length);
+  server.listen(PORT, '0.0.0.0', () => {
   const nets = require('os').networkInterfaces();
   const ips = Object.values(nets).flat().filter(n => n.family === 'IPv4' && !n.internal).map(n => n.address);
   console.log('\n  ULTRALINK relay online');
   console.log('  local:   ' + (USE_TLS ? 'https' : 'http') + '://localhost:' + PORT);
   ips.forEach(ip => console.log('  network: ' + (USE_TLS ? 'https' : 'http') + '://' + ip + ':' + PORT));
   console.log('');
-});
+  });
+}
+start().catch(e=>{console.error('LIVE MISSION STARTUP FAILED',e.code||'DATABASE_UNAVAILABLE');process.exit(1);});

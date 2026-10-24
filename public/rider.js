@@ -24,6 +24,26 @@
   };
   const app = (fn, ...a) => { try { APP && APP[fn] && APP[fn](...a); } catch (e) {} };
 
+  // Optional browser battery reporting is independent of GPS and microphone.
+  let batteryManager=null,batteryStatus='unavailable',batteryStarted=false;
+  function sendBattery(){
+    if(!started||ended||!link.ready||!alertJoined)return;
+    const level=batteryManager?.level;
+    const battery=batteryManager&&Number.isFinite(level)&&level>=0&&level<=1?{status:'ok',percent:Math.round(level*100),charging:!!batteryManager.charging}:{status:batteryStatus};
+    const own=UL.batteryView({...battery,at:Date.now()});$('phoneBattery').textContent=own.text.replace(' · 0s ago','');$('phoneBattery').style.color=own.color;
+    link.send({t:'battery',battery});
+  }
+  async function startBattery(){
+    if(batteryStarted){sendBattery();return;}batteryStarted=true;
+    setInterval(sendBattery,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sendBattery();});
+    if(typeof navigator.getBattery!=='function'){sendBattery();return;}
+    try{
+      batteryManager=await Promise.race([navigator.getBattery(),new Promise((_,reject)=>setTimeout(()=>reject(Error('Battery unavailable')),4000))]);batteryStatus='ok';
+      batteryManager.addEventListener('levelchange',sendBattery);batteryManager.addEventListener('chargingchange',sendBattery);
+    }catch{batteryManager=null;batteryStatus='error';}
+    sendBattery();
+  }
+
   /* One-tap assistance alerts. A relay receipt is not an escort acknowledgement.
      Pending events survive a reload and retry only after joining, with the same ID. */
   let riderAlerts = [], pendingAlerts = [], alertJoined = false;
@@ -177,7 +197,8 @@
   const joinMsg = () => Object.assign({}, joinInfo, me ? { resume: me } : {});
   let retryT = null;
   link.on('error', m => {
-    /* relay restarted: the escort re-creates the mission within seconds — keep retrying instead of kicking the rider out */
+    /* Never recreate missing missions from a rider; wait for the durable relay state. */
+    if(m.code==='MISSION_CLOSED'){link.emit('mission.ended',{mode:'close',reason:m.msg});return;}
     if (m.code === 'NO_MISSION' && started && !ended) { $('lnk').className = 'dot'; clearTimeout(retryT); retryT = setTimeout(() => link.send(joinMsg()), 4000); return; }
     fail(m.msg || 'LINK ERROR'); fx.error();
   });
@@ -185,7 +206,7 @@
   link.on('close', () => { $('lnk').className = 'dot'; });
   link.on('rtt', v => $('rtt').textContent = 'RTT ' + v + 'ms');
   link.on('roster', m => {
-    roster = m.units.filter(u => u.id !== me);
+    roster=m.units.filter(u=>u.id!==me);const escorted=roster.some(u=>u.role==='escort');$('escortPresence').textContent=escorted?'ESCORT ONLINE':'ESCORT OFFLINE · MISSION ACTIVE';$('escortPresence').className='tag '+(escorted?'ok':'');
     if (voice) voice.sync(roster.map(u => u.id));
   });
   link.on('ptt', m => {
@@ -262,10 +283,12 @@
     $('mis').textContent = mission.code + ' · ' + mission.name;
     $('cs').textContent = localStorage.ulCallsign;
     $('src').textContent = useBle ? 'GPS+BLE' : 'GPS';
-    if (started) { me = m.id; return; }
+    clockStart=mission.clockStart||null;clockStop=mission.clockStop||null;targetSec=mission.targetSec||null;startAt=mission.startAt||null;
+    if (started) { me=m.id;sendBattery();return; }
     started = true;
     clockStart = mission.clockStart || null; clockStop = mission.clockStop || null; targetSec = mission.targetSec || null; startAt = mission.startAt || null;
-    applyRoute(); initSectors(); startGeo(); startVoice(); keepAwake(); buildRiderSettings();
+    applyRoute();initSectors();if(m.timing?.[localStorage.ulCallsign])sectorTimer?.units.set('me',m.timing[localStorage.ulCallsign]);
+    startBattery();startGeo();startVoice();keepAwake();buildRiderSettings();
     setInterval(() => { renderClock(); }, 500);
     if (useBle) pairBle();
   });

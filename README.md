@@ -1,4 +1,13 @@
-# ULTRALINK v1.12.2
+# ULTRALINK v1.12.3
+
+**Battery reporting + durable race missions:** read `RELEASE-v1.12.3.txt`, `VALIDATION-v1.12.3.txt` and `ROAD-TEST-v1.12.3.txt`. This cumulative source update applies over an existing v1.12.1 or v1.12.2 Neon installation. Merge files; keep all existing assets and private Render settings. Deploy between missions, then reload every device.
+
+The relay, not the escort browser, owns the race. Closing every escort console does not end it. Reopen Escort under the mission-owner account and select **Active Missions → Resume Mission**. Race/training missions remain active until explicitly closed/aborted, even when temporarily empty. Route, clock, alerts, rider state and sector progress use the existing PostgreSQL database. The new table is created automatically. One relay instance must be the sole writer.
+
+Rider cards show battery percentage and charging state only when the browser exposes them. Unsupported/denied readings say unavailable; old readings say stale. iPhone/Safari battery reporting is not available through this implementation. Keep supported phones online and ULTRALINK foregrounded for reliable updates.
+
+**An independently hosted relay is essential:** powering off a laptop that also runs the relay stops the service. A relay/network/database outage can interrupt live communication; persisted state enables recovery, not uninterrupted radio. Recent telemetry/battery/sector snapshots are periodically saved, so an abrupt relay crash can lose roughly the most recent 10–11 seconds under normal storage conditions, or more during a storage outage. Mission creation and manual clock/end acknowledgements wait for database confirmation.
+
 
 **Radio maintenance patch:** read `RELEASE-v1.12.2.txt`, `VALIDATION-v1.12.2.txt` and `ROAD-TEST-v1.12.2.txt`. Apply the small update over v1.12.1; do not delete existing assets. Neon configuration is unchanged. Update and reload every client. Media-flow receipts are software reports, not proof a person heard speech. Native installers/background radio are not rebuilt or newly certified.
 

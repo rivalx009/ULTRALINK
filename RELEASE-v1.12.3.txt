@@ -1,0 +1,84 @@
+ULTRALINK v1.12.3 — BATTERY + DURABLE MISSION RECOVERY
+=====================================================
+Cumulative source update for an existing v1.12.1/v1.12.2 Neon installation.
+Not a full standalone installation. Keep existing folders/assets/configuration.
+
+WHAT CHANGED
+- Supported rider browsers send battery percentage, charging state and fresh
+  server timestamps. Updates occur at join/rejoin, level/charging changes,
+  foreground return and approximately every 30 seconds while the page runs.
+- Escort rider cards and rider details show battery information. <=30% is
+  amber; <=15% is red. Readings older than 90 seconds say STALE. Missing,
+  unsupported or failed readings never masquerade as zero battery.
+- Riders see their own battery state and ESCORT OFFLINE / MISSION ACTIVE when
+  no escort is connected. This does not claim an offline phone is connected.
+- The relay owns race/training missions independently of escort consoles.
+  Closing a console or turning off an escort-only laptop does NOT send an end
+  command. Riders can remain joined, sending telemetry and tracking sectors.
+- Escort home adds ACTIVE MISSIONS for the signed-in mission-owner account.
+  RESUME MISSION joins the server's existing route, target and clock rather
+  than rebuilding from a possibly old local profile. A normal relaunch of an
+  existing code likewise resumes it without overwriting its race settings.
+- The same browser retains its escort identity across tab/browser restarts.
+  A fresh device can join the owner's active mission as a new escort unit.
+- PostgreSQL now stores live missions, member snapshots, sector progress and
+  explicit-close markers. State can recover after relay restart without an
+  escort recreating it. Closed mission codes cannot silently resurrect.
+- Race/training missions have no empty-room timeout: explicit owner close or
+  abort ends them. Comms-only channels retain their existing idle timeout.
+- Optimistic database versions reject stale overlapping relay writers;
+  database save problems generate an escort warning, not a false save claim.
+- Existing v1.12.2 radio reliability changes are retained in this update.
+
+INSTALL / RENDER
+1. Finish and explicitly close any live race. Export saved profiles as backup.
+   Do not deploy/restart infrastructure during a race. Existing pre-update live
+   races are NOT already backed up in the new PostgreSQL live-state table.
+2. Extract the ZIP. Copy its CONTENTS into the root of your existing repository,
+   replacing same-named files. MERGE public/; do not remove unchanged assets.
+   Do not upload the ZIP itself as an application file.
+3. Commit/push to Render's deployment branch. Keep the existing private
+   DATABASE_URL, TURN configuration and other settings. No new package,
+   paid service or environment variable is required. The existing Neon user
+   needs permission to create the ultralink_live_state table (automatic).
+4. Use ONE relay instance, not multiple replicas pointing to the same database.
+   If MULTIPLE RELAY WRITERS appears, stop the old/extra relay, then restart
+   the sole remaining relay to load the latest confirmed snapshot.
+5. After deployment, close/reopen and reload ALL escort/rider pages online.
+   The cache version is ultralink-v24. Do not mix old and new clients.
+6. Local installation: Node 22+, npm ci --omit=dev --ignore-scripts,
+   npm run check, npm start. DATABASE_URL remains required.
+7. Complete ROAD-TEST-v1.12.3.txt before using this at a race.
+
+RECOVER AFTER THE ESCORT LAPTOP SHUTS DOWN
+1. Leave riders in the SAME mission; do not create a new race code.
+2. Turn the laptop back on, open the same deployed ULTRALINK site.
+3. Open Escort, sign in if needed using the mission-owner account.
+4. Under ACTIVE MISSIONS, select RESUME MISSION for the matching code/name.
+5. Confirm clock, route, rider locations and radio read-back before continuing.
+   Saved planning profiles and active live missions are distinct lists.
+
+BOUNDARIES / HONEST LIMITATIONS
+- The relay MUST run independently, e.g. on Render. If it runs on the escort
+  laptop, turning that laptop off also turns off the relay. No code change can
+  keep that computer serving traffic without power.
+- Rider-to-relay internet is still necessary. Riders cannot talk to an absent
+  escort, and another device cannot provide the absent escort's microphone.
+- Database/network/host outages can interrupt live service. Recovery restores
+  saved state; it does not make radio uninterrupted during an infrastructure
+  outage. Render Free sleep/restarts are not a race-availability guarantee.
+- Recent telemetry/battery/sector state saves about every 10 seconds (plus a
+  short debounce); an abrupt relay loss can lose approximately 10–11 seconds
+  of recent samples under normal conditions. Storage outages may lose more.
+  Creation, manual clock operations and mission ending await confirmed writes.
+- Browser timers may be delayed/background-suspended. Battery is optional
+  browser-supplied information, not an independently measured fuel gauge.
+  iPhone Safari and browsers lacking Battery Status API show unavailable.
+  Supported browsers generally require a secure HTTPS context.
+- Hardware, Bluetooth drivers, real battery drain, cellular coverage and full
+  laptop power-cycle behavior were not physically tested in this environment.
+- Windows/Android installers were not rebuilt. Native Android background radio
+  remains outside the verified authenticated browser/PWA path.
+- Keep a separate communications fallback; this is not certified safety gear.
+
+See VALIDATION-v1.12.3.txt and ROAD-TEST-v1.12.3.txt.

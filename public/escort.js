@@ -32,6 +32,18 @@
   addEventListener('ul-weather-toggle',e=>{if(e.detail.expanded&&isPhone()){popOff=true;renderPop(true);}setTimeout(()=>map?.invalidateSize(),100);});
   const fmtSpeed = ms => ms == null ? '--' : cfg.speed(ms).toFixed(1);
 
+  async function refreshActiveMissions(){
+    if(opsStarted)return;const list=$('activeMissionList');if(!list)return;
+    try{
+      const response=await fetch('/api/missions/active',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('Unavailable');
+      const data=await response.json();list.replaceChildren();
+      if(!data.missions.length){list.textContent='No active missions for this account.';return;}
+      for(const m of data.missions){const box=document.createElement('div'),name=document.createElement('div'),button=document.createElement('button');box.style.cssText='padding:7px 0;border-top:1px solid var(--line)';name.textContent=m.name+' · '+m.code+' · '+m.riders+' rider(s) online';name.style.cssText='font-size:10px;overflow-wrap:anywhere';button.textContent='RESUME MISSION';button.className='primary';button.style.cssText='margin-top:5px;width:100%;font-size:10px';button.onclick=()=>{route=null;UL.Plan.onJoin(m.code,localStorage.ulEscortCall||UL.Account.user.callsign);};box.append(name,button);list.append(box);}
+      if(!data.storage.ok){const warning=document.createElement('div');warning.textContent=data.storage.error;warning.style.color='var(--bad)';list.append(warning);}
+    }catch{list.textContent='Active missions unavailable — refresh to retry. Do not create a duplicate.';}
+  }
+  $('refreshActiveMissions').onclick=refreshActiveMissions;refreshActiveMissions();setInterval(refreshActiveMissions,30000);
+
   /* ================================================================== BOOT */
   const bootTasks = UL.boot.tasks({ probeMicrophone: false });
   async function startup() {
@@ -60,20 +72,13 @@
     });
   };
   /* the same laptop keeps its unit id across reconnects (voice links + cards survive a network blip) */
-  function resumeId(code) { try { const k = 'ulEsc:' + code; return sessionStorage[k] || undefined; } catch (e) { return undefined; } }
+  function resumeId(code) { try { const k = 'ulEsc:' + code; return localStorage[k] || sessionStorage[k] || undefined; } catch (e) { return undefined; } }
   const joinMsg = () => Object.assign({}, joinInfo, me ? { resume: me } : {});
-  link.on('mission.created', m => { restoring = 0; link.send(joinMsg()); });
+  link.on('mission.created',m=>{restoring=0;if(m.resumed)route=null;link.send(joinMsg());});
   UL.Plan.onJoin = (code, call) => { myCall = call; joinInfo = { t: 'join', code, role: 'escort', callsign: call, resume: resumeId(code) }; link.connect(); link.send(joinInfo); };
-  /** the relay restarted (free hosting sleeps / redeploys): re-create the live mission from what this escort knows */
-  function restoreMission() {
-    if (Date.now() - restoring < 6000 || !mission) return; restoring = Date.now();
-    link.send({ t: 'mission.create', code: mission.code, name: mission.name, route: mission.route, distance: mission.distance, riders: mission.riders,
-      sectors: mission.sectors, startAt: mission.startAt || null, kind: mission.kind, laps: mission.laps, lapLen: mission.lapLen, lapTargets: mission.lapTargets, targetSec: targetSec || mission.targetSec || null, lead: mission.lead || null,
-      restore: true, clockStart, clockStop });
-    log('SYS', 'RELAY RESTARTED — MISSION RESTORED', '#ffb000');
-  }
   link.on('error', m => {
-    if (m.code === 'NO_MISSION' && opsStarted && !ended) return restoreMission();
+    if(m.code==='MISSION_CLOSED'&&opsStarted){link.emit('mission.ended',{mode:'close',reason:m.msg});return;}
+    if(m.code==='NO_MISSION'&&opsStarted&&!ended){UL.toast('MISSION NOT FOUND — CHECK SERVER STORAGE; NOT RECREATED', 'bad',7000);return;}
     UL.Plan.joinError(m.msg || 'LINK ERROR'); UL.toast(m.msg || 'LINK ERROR', 'bad'); fx.error();
   });
   link.on('open', () => { $('tLink').className = 'dot ok'; if (opsStarted && joinInfo && !ended) link.send(joinMsg()); });
@@ -82,12 +87,13 @@
 
   link.on('joined', m => {
     me = m.id; mission = m.mission; myColor = m.color;
-    try { sessionStorage['ulEsc:' + mission.code] = me; } catch (e) {}
+    try { sessionStorage['ulEsc:' + mission.code] = me;localStorage['ulEsc:' + mission.code]=me; } catch (e) {}
     if (voice) voice.selfId = me;
+    clockStart=mission.clockStart||null;clockStop=mission.clockStop||null;targetSec=mission.targetSec||null;startAt=mission.startAt||null;
     if (opsStarted) { if (voice) voice.sync([...units.keys()]); return; }   // silent re-join after a dropped connection
     try { leadName = localStorage['ulLead:' + mission.code] || launchLead || mission.lead || null; } catch (e) { leadName = launchLead || mission.lead || null; }
     opsStarted = true;
-    if (!route && mission.route && mission.route.length) route = UL.buildRoute(mission.route.map(p => ({ lat: p[0], lon: p[1], ele: p[2] || 0 })));
+    if (mission.route && mission.route.length) route = UL.buildRoute(mission.route.map(p => ({ lat: p[0], lon: p[1], ele: p[2] || 0 })));
     if (route) tel.setRoute(route);
     if (route && mission.laps > 1) { try { const k = +sessionStorage['ulIdx:' + mission.code]; if (k >= 0) tel.lastIdx = k; } catch (e) {} }
     clockStart = mission.clockStart || null; clockStop = mission.clockStop || null; targetSec = mission.targetSec || null; startAt = mission.startAt || null;
@@ -116,6 +122,10 @@
         if (isEnd) log('SYS', `${key} FINISHED THE ${mission.laps > 1 ? 'SESSION (' + mission.laps + ' LAPS)' : 'ROUTE'}`, '#7cff5a');
       }
     });
+    for(const[key,state]of Object.entries(m.timing||{})){
+      sectorTimer.units.set(key,state);
+      (state.times||[]).forEach((dur,i)=>{const sc=sectors[i];if(dur!=null&&sc)recordResult({key,i,name:sc.name,lap:sc.lap||null,dur,target:sc.target||null,dl:sc.target?dur-sc.target:null});});
+    }
     UL.Plan.hide(); UL.Plan.closeJoin();
     $('shell').style.display = 'flex';
     $('tMis').textContent = mission.name + (mission.kind === 'training' ? ' · TRAINING' + (mission.laps > 1 ? ' · ' + mission.laps + ' LAPS' : '') : ''); $('tCode').textContent = 'CODE ' + mission.code;
@@ -137,7 +147,8 @@
       ids.add(u.id);
       const cur = units.get(u.id) || { data: {}, ts: 0 };
       const isNew = !units.has(u.id);
-      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color, riderName:u.riderName, weightKg:u.weightKg, incidentOnly: false }));
+      units.set(u.id, Object.assign(cur, { id: u.id, role: u.role, callsign: u.callsign, color: u.color, riderName:u.riderName, weightKg:u.weightKg,battery:u.battery||cur.battery||null, incidentOnly: false }));
+      if(isNew&&u.telemetry){cur.data=u.telemetry;cur.ts=u.telAt||0;}
       if (isNew && opsStarted) {
         log('SYS', `${u.callsign} (${u.role.toUpperCase()}) CONNECTED`, u.color); UL.toast(`${u.callsign} CONNECTED`, 'ok'); fx.success();
         if (u.role === 'rider' && u.callsign === leadName && sel === 'self') { sel = u.id; follow = true; G.zoomed = true; }   // lead rider becomes the main follow-up
@@ -147,6 +158,8 @@
     assignKeys(); renderUnits();
     if (voice) voice.sync([...ids]);
   });
+  link.on('battery',m=>{const u=units.get(m.id);if(u){u.battery=m.battery;renderUnits();if(sel===m.id)renderPop(true);}});
+  link.on('mission.storage',m=>{if(!m.ok)UL.toast(m.error+' — LIVE BACKUP NOT CONFIRMED','bad',7000);});
   link.on('telemetry', m => {
     const u = units.get(m.id) || { id: m.id, role: m.role, callsign: m.callsign, color: m.color };
     u.data = m.data; u.ts = Date.now(); u.callsign = m.callsign; u.color = m.color; u.role = m.role; u.incidentOnly = false;
@@ -451,8 +464,8 @@
       <div class="ubody"><div class="gwrap" title="Click the gauge to cycle: speed / heart rate / gradient">${gaugeSvg()}<div class="gval"><b>0.0</b><small>KM/H</small></div><div class="gmode">SPEED ▸</div></div>
       <div class="ustats"><div><div class="k">HEART</div><div class="v"><span class="hrp">♥</span> <span class="hv">--</span></div></div><div><div class="k">GRADE %</div><div class="v gv">--</div></div>
       <div><div class="k">REMAIN</div><div class="v rv">--</div></div><div><div class="k">ETA</div><div class="v ev">--:--</div></div></div></div>
-      <div class="prog"></div><div class="uadv" style="display:none"></div><div class="usec"></div>`;
-    const c = { el, mode: 0, refs: { ico: el.querySelector('.ico'), cs: el.querySelector('.cs'), ptt: el.querySelector('.ptt'), dot: el.querySelector('.dot'), vl: el.querySelector('.vl'), nd: el.querySelector('.nd'),
+      <div class="battery-status" style="padding:5px 10px;font-size:9px;overflow-wrap:anywhere" role="status"></div><div class="prog"></div><div class="uadv" style="display:none"></div><div class="usec"></div>`;
+    const c = { el, mode: 0, refs: { battery:el.querySelector('.battery-status'),ico: el.querySelector('.ico'), cs: el.querySelector('.cs'), ptt: el.querySelector('.ptt'), dot: el.querySelector('.dot'), vl: el.querySelector('.vl'), nd: el.querySelector('.nd'),
       gval: el.querySelector('.gval b'), body: el.querySelector('.ubody'), gunit: el.querySelector('.gval small'), gmode: el.querySelector('.gmode'), hv: el.querySelector('.hv'), hrp: el.querySelector('.hrp'), gv: el.querySelector('.gv'), rv: el.querySelector('.rv'), ev: el.querySelector('.ev'), prog: el.querySelector('.prog'), usec: el.querySelector('.usec'), uadv: el.querySelector('.uadv') }, sig: '' };
     el.onclick = () => selectUnit(id);
     c.refs.lead = el.querySelector('.lead');
@@ -475,6 +488,7 @@
     c.el.classList.toggle('sel', sel === id); c.el.classList.toggle('stale', stale);
     c.el.classList.toggle('off', !!OFF.get(id)?.on); c.el.classList.toggle('leadcard', isLead(u));
     r.lead.style.display = u.role === 'rider' ? '' : 'none'; r.lead.classList.toggle('on', isLead(u));
+    const bv=UL.batteryView(u.battery);r.battery.style.display=u.role==='rider'?'':'none';r.battery.textContent=bv.text;r.battery.style.color=bv.color;
     const posOnly = u.role !== 'rider';                               // escorts: no telemetry, position on the map only
     r.body.style.display = posOnly ? 'none' : ''; r.prog.style.display = posOnly ? 'none' : '';
     c.el.style.borderLeft = '3px solid ' + col;
@@ -602,6 +616,7 @@
     const self = tel.state;
     let h = `<div class="ph"><span>${UL.unitSvg('rider', col, 0, 16)}</span><b style="letter-spacing:.16em;color:${col}">${esc(u.callsign)}</b><span class="sp"></span><span class="tag ${Date.now() - u.ts > 12000 ? 'bad' : 'ok'}">${Date.now() - u.ts > 12000 ? 'STALE' : 'LIVE'}</span><button class="ghost" id="popX" style="padding:2px 8px">✕</button></div><div class="pb">
       <div class="row" style="gap:6px;margin-bottom:8px"><button id="popLead" class="${isLead(u) ? 'primary' : 'ghost'}" style="flex:1;font-size:9px;padding:6px">${isLead(u) ? '★ LEAD RIDER' : '☆ SET AS LEAD'}</button><button id="popRet" class="ghost" style="flex:1;font-size:9px;padding:6px">◎ RETURN TO RIDER</button></div>
+      <div class="battery-detail" style="margin:8px 0;font-size:11px;color:${UL.batteryView(u.battery).color}">${esc(UL.batteryView(u.battery).text)}</div>
       <div class="pgrid"><div><div class="k">SPEED ${cfg.speedU()}</div><div class="v">${S(d.speed)}</div></div><div><div class="k">HEART BPM</div><div class="v">${d.hr ?? '--'}</div></div><div><div class="k">GRADE %</div><div class="v">${UL.fmt.pct(d.grade)}</div></div>
       <div><div class="k">ELEV ${cfg.elevU()}</div><div class="v">${d.ele == null ? '--' : Math.round(cfg.elev(d.ele))}</div></div><div><div class="k">REMAIN ${cfg.distU()}</div><div class="v">${D(d.remaining)}</div></div><div><div class="k">ETA</div><div class="v">${d.eta ? cfg.time(d.eta) : '--:--'}</div></div>
       <div><div class="k">DIST TO ME ${cfg.distU()}</div><div class="v">${(d.lat != null && self.lat != null) ? D(UL.haversine({ lat: self.lat, lon: self.lon }, { lat: d.lat, lon: d.lon })) : '--'}</div></div><div><div class="k">AVG ${cfg.speedU()}</div><div class="v">${S(d.avg)}</div></div><div><div class="k">COVERED ${cfg.distU()}</div><div class="v">${D(d.covered)}</div></div></div>

@@ -1,0 +1,50 @@
+ULTRALINK v1.12.3 — STATIONARY ACCEPTANCE TEST
+=============================================
+Use a test mission before race day. Keep all devices stationary and safe.
+Use the deployed HTTPS site; verify all devices reloaded the new release.
+
+1. SIGN IN / CREATE
+   Use the mission owner's account on the escort laptop. Create a short test
+   route with at least two sectors. Join from each rider phone and start the
+   mission clock. Record the code and clock start. Do a spoken radio read-back.
+2. BATTERY
+   On each supported phone, compare the escort reading with the phone's own
+   battery screen. Plug/unplug charging and allow up to 30 seconds plus network
+   delay (more if backgrounded). Check low-battery colours when practical.
+   An iPhone/Safari or unsupported browser should show unavailable, not 0%.
+   Stop phone updates and verify a formerly valid reading becomes STALE after
+   90 seconds; do not treat it as a fresh measurement.
+3. CLOSE ALL ESCORT WINDOWS
+   Close EVERY escort console, leaving rider pages open and online. Riders
+   should remain in the same mission and show ESCORT OFFLINE / MISSION ACTIVE.
+   Their mission clock continues; no mission-ended screen should appear.
+4. POWER OFF THE ESCORT LAPTOP
+   Only do this if the relay is on Render/another independent machine.
+   Shut the laptop down fully. Leave rider pages open for several minutes.
+   If safe in a separate controlled route test, cross a checkpoint during the
+   escort absence; verify the returning console has retained the sector result.
+5. RETURN / RESUME
+   Turn the laptop on, open ULTRALINK, choose Escort, sign in as the same mission
+   owner if necessary. Find the SAME code under ACTIVE MISSIONS and select
+   RESUME MISSION. Do not generate a new code. Verify route/target unchanged,
+   clock elapsed correctly, current riders/positions, battery and sector state.
+   Riders should show ESCORT ONLINE again. Repeat the radio read-back.
+6. FRESH DEVICE
+   Sign into the owner's account in a separate browser/device and resume the
+   same active mission. Confirm no second race was created and settings persist.
+7. MANUAL END
+   Explicitly close/abort the TEST mission. Riders should receive mission-ended;
+   refreshing/reopening must not restore that closed code as an active mission.
+8. OPTIONAL CONTROLLED RELAY RESTART — TEST MISSION ONLY
+   Wait at least 15 seconds after test telemetry, restart the single relay and
+   wait for it to return. Expect a connection interruption, not seamless radio.
+   Verify saved mission/clock/sector data returns and clients can reconnect.
+   Retry/repair radio and obtain a spoken read-back. Do not do this mid-race.
+
+FAIL / DO NOT USE UNTIL RESOLVED
+Missing route/clock, duplicate mission, unexpected end, persistent storage or
+multiple-writer warning, disappearing rider after reconnection, or failed spoken
+radio read-back. Check foreground permissions, internet, one relay instance,
+Neon health, correct deployed URL and newest release on every device.
+
+Retain ROAD-TEST-v1.12.2.txt for the physical PTT/radio-specific tests.

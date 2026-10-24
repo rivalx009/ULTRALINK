@@ -5,7 +5,7 @@ const {promisify}=require('util');const scrypt=promisify(crypto.scrypt);
 module.exports=function accounts(){
   const store=require('./postgres-store')();
   const cache=new Map();let hashing=0;
-  const dir=process.env.UL_DATA_DIR||path.join(__dirname,'data'); // live mission snapshots only; NOT account storage
+  const dir=process.env.UL_DATA_DIR||path.join(__dirname,'data'); // legacy mission import directory; current mission/account storage is PostgreSQL
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   store.init().catch(store.logError);
   const normalize=v=>String(v||'').trim().toUpperCase();
@@ -77,5 +77,5 @@ module.exports=function accounts(){
     }catch(e){if(!e.status)store.logError(e);send(res,e.status||503,{error:e.status?e.message:'Account storage is temporarily unavailable. Changes were not confirmed; reconnect and check the account copy before retrying.'});}
     return true;
   }
-  return{route,session,authenticate,get available(){return store.ready;},dataDir:dir};
+  return{store,route,session,authenticate,get available(){return store.ready;},dataDir:dir};
 };

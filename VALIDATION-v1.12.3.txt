@@ -1,0 +1,56 @@
+ULTRALINK v1.12.3 — LOCAL SOFTWARE VALIDATION
+============================================
+NOT a physical-device, production-deployment or race reliability certification.
+
+Syntax: npm run check passed for the server and listed client/storage scripts.
+Local relay + real local PostgreSQL + automated Chromium/WebSocket clients.
+
+NEW BATTERY / MISSION RECOVERY: 35 passing checks
+- Battery validation, server timestamp, percent/charging updates and unavailable.
+- Escort disconnect leaves rider joined; active list persists and is owner-only.
+- Unauthenticated list rejected; cross-account overwrite/identity theft denied.
+- Relaunch keeps same mission name, route, target and clock instead of replacing.
+- Server tracks sector progress when escort is absent; resume returns progress.
+- Fresh escort browser resumes through Active Missions UI.
+- Mock Battery Status API drives real rider page and real escort battery cards.
+- Low-battery colour, stale indication, unsupported state, mobile Units access.
+- All escort sockets/pages disconnected: actual rider page shows escort offline
+  with mission active; reopened escort restores mission and battery; rider sees
+  escort online again.
+- Abrupt relay process kill/restart restores confirmed state from PostgreSQL.
+- Returning rider identity/telemetry, clock/route and sector progress restored.
+- Explicit close notifies riders, removes active list entry and survives restart
+  without permitting that closed code to resurrect.
+- No browser JavaScript exceptions in the final targeted test run.
+
+POSTGRESQL WRITER PROTECTION: 4 passing checks
+- Same initial version read consistently, confirmed save increments version,
+  stale writer rejected, newer snapshot retained after stale write attempt.
+
+REGRESSION TESTS: 219 passing checks
+Hardware PTT / input selection: 32
+Mission / radio end-to-end: 57
+Emergency / rider-alert behavior: 28
+Account / weather / wind / mobile UI: 21
+Account API / session / password handling: 20
+Conflict / offline / backup: 6
+Radio fault injection / repair / diagnostic export: 23
+Media / repeat-PTT / relay recovery: 19
+Radio receipt protocol / identity / nonce validation: 9
+Actual visible rider/comms PTT fault controls: 4
+
+TOTAL: 258 passing checks in the final local test runs, plus syntax validation.
+Harness-only early failures (dependency path, first hidden escort-only battery
+node selection, unguarded test init on blank frames) were corrected before the
+final successful runs. These counts are test cases, not a reliability percent.
+
+NOT VERIFIED
+Production Render/Neon deployment, actual iOS/Android Battery API availability,
+real low-battery drain, actual accessory Bluetooth/USB hardware, OS sleep/power
+saving, a physical laptop power cycle, long-duration cellular race coverage,
+and native installer/background radio. Battery API and media devices were
+simulated for relevant browser tests. Host power loss was simulated by killing
+and restarting the relay process. Latest snapshot was confirmed before the
+restart test; zero-loss arbitrary-crash durability is NOT claimed.
+
+Run ROAD-TEST-v1.12.3.txt using the actual equipment before race use.
